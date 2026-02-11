@@ -47,11 +47,10 @@ export default function HistoryPage() {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "200" });
-      // Use a wide date range for history
-      const farPast = new Date();
-      farPast.setFullYear(farPast.getFullYear() - 1);
-      params.set("week", farPast.toISOString());
+      const params = new URLSearchParams({
+        mode: "all",
+        limit: "500",
+      });
       if (search) params.set("search", search);
       if (category) params.set("category", category);
 
@@ -59,7 +58,7 @@ export default function HistoryPage() {
       const data = await res.json();
       setEvents(data.events || []);
     } catch {
-      // ignore
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -70,7 +69,6 @@ export default function HistoryPage() {
     return () => clearTimeout(timer);
   }, [fetchEvents]);
 
-  // Get unique event names for historical comparison
   const eventNames = [...new Set(events.map((e) => e.eventName))];
   const selectedEventData = selectedEvent
     ? events.filter((e) => e.eventName === selectedEvent)
@@ -134,7 +132,6 @@ export default function HistoryPage() {
 
             {selectedEvent && selectedEventData.length > 0 && (
               <>
-                {/* Historical table */}
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-sm">
                     <thead>
@@ -161,11 +158,15 @@ export default function HistoryPage() {
                     </thead>
                     <tbody>
                       {selectedEventData.map((e) => {
+                        const actualNum = e.actual
+                          ? parseFloat(e.actual.replace(/[^0-9.-]/g, ""))
+                          : null;
+                        const forecastNum = e.forecast
+                          ? parseFloat(e.forecast.replace(/[^0-9.-]/g, ""))
+                          : null;
                         const surprise =
-                          e.actual && e.forecast
-                            ? (
-                                parseFloat(e.actual) - parseFloat(e.forecast)
-                              ).toFixed(2)
+                          actualNum !== null && forecastNum !== null
+                            ? (actualNum - forecastNum).toFixed(2)
                             : null;
                         return (
                           <tr
@@ -198,7 +199,10 @@ export default function HistoryPage() {
                                   : "text-gray-500"
                               }`}
                             >
-                              {surprise ? (parseFloat(surprise) > 0 ? "+" : "") + surprise : "--"}
+                              {surprise
+                                ? (parseFloat(surprise) > 0 ? "+" : "") +
+                                  surprise
+                                : "--"}
                             </td>
                           </tr>
                         );
@@ -207,7 +211,6 @@ export default function HistoryPage() {
                   </table>
                 </div>
 
-                {/* Chart */}
                 <HistoricalChart events={selectedEventData} />
               </>
             )}

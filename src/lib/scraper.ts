@@ -1,6 +1,8 @@
 import * as cheerio from "cheerio";
 import { ScrapedEvent, EventCategory } from "@/types/events";
+import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
 
+const FINNHUB_BASE = "https://finnhub.io/api/v1";
 const MARKETWATCH_URL =
   "https://www.marketwatch.com/economy-politics/calendar";
 
@@ -22,14 +24,16 @@ function categorizeEvent(name: string): EventCategory {
     lower.includes("jobless") ||
     lower.includes("jobs") ||
     lower.includes("labor") ||
-    lower.includes("unemployment")
+    lower.includes("unemployment") ||
+    lower.includes("adp")
   )
     return "EMPLOYMENT";
   if (
     lower.includes("cpi") ||
     lower.includes("ppi") ||
     lower.includes("inflation") ||
-    lower.includes("price")
+    lower.includes("price") ||
+    lower.includes("pce")
   )
     return "INFLATION";
   if (lower.includes("gdp") || lower.includes("gross domestic"))
@@ -56,14 +60,16 @@ function categorizeEvent(name: string): EventCategory {
     lower.includes("retail") ||
     lower.includes("spending") ||
     lower.includes("confidence") ||
-    lower.includes("sentiment")
+    lower.includes("sentiment") ||
+    lower.includes("michigan")
   )
     return "CONSUMER";
   if (
     lower.includes("trade") ||
     lower.includes("import") ||
     lower.includes("export") ||
-    lower.includes("deficit")
+    lower.includes("deficit") ||
+    lower.includes("balance")
   )
     return "TRADE";
   if (
@@ -86,13 +92,22 @@ function categorizeEvent(name: string): EventCategory {
     lower.includes("energy") ||
     lower.includes("crude") ||
     lower.includes("gas") ||
-    lower.includes("petroleum")
+    lower.includes("petroleum") ||
+    lower.includes("baker hughes")
   )
     return "ENERGY";
   return "OTHER";
 }
 
-function inferImportance(name: string): "HIGH" | "MEDIUM" | "LOW" {
+function inferImportance(
+  name: string,
+  impact?: string
+): "HIGH" | "MEDIUM" | "LOW" {
+  // Use Finnhub impact field if available
+  if (impact === "high") return "HIGH";
+  if (impact === "medium") return "MEDIUM";
+  if (impact === "low") return "LOW";
+
   const lower = name.toLowerCase();
   const highImpact = [
     "nonfarm payroll",
@@ -137,17 +152,168 @@ function inferImportance(name: string): "HIGH" | "MEDIUM" | "LOW" {
   return "LOW";
 }
 
-function parseDateTime(dateStr: string, timeStr: string): Date {
-  // dateStr format: "Feb. 10, 2025" or "February 10, 2025"
-  // timeStr format: "8:30 a.m." or "10 a.m." or "2 p.m." or ""
-  const currentYear = new Date().getFullYear();
+// Primary: Finnhub API (reliable, free tier)
+export async function scrapeFromFinnhub(
+  apiKey: string
+): Promise<ScrapedEvent[]> {
+  const now = new Date();
+  const from = format(
+    startOfWeek(now, { weekStartsOn: 1 }),
+    "yyyy-MM-dd"
+  );
+  const to = format(
+    addDays(endOfWeek(now, { weekStartsOn: 1 }), 7),
+    "yyyy-MM-dd"
+  );
 
-  // Clean up date string
+  const url = `${FINNHUB_BASE}/calendar/economic?from=${from}&to=${to}&token=${apiKey}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Finnhub API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const calendar = data.economicCalendar || [];
+
+  return calendar
+    .filter(
+      (e: { country?: string }) =>
+        e.country === "US" || e.country === "United States"
+    )
+    .map(
+      (e: {
+        event: string;
+        time: string;
+        actual?: number;
+        estimate?: number;
+        prev?: number;
+        impact?: string;
+        unit?: string;
+        country?: string;
+      }) => {
+        const dateTime = new Date(e.time);
+        const eventName = e.event || "Unknown Event";
+
+        return {
+          eventName,
+          eventSlug: slugify(eventName),
+          dateTime,
+          actual:
+            e.actual !== null && e.actual !== undefined
+              ? String(e.actual)
+              : undefined,
+          forecast:
+            e.estimate !== null && e.estimate !== undefined
+              ? String(e.estimate)
+              : undefined,
+          previous:
+            e.prev !== null && e.prev !== undefined
+              ? String(e.prev)
+              : undefined,
+          unit: e.unit || undefined,
+          importance: inferImportance(eventName, e.impact),
+          category: categorizeEvent(eventName),
+          sourceUrl: "https://finnhub.io",
+        } satisfies ScrapedEvent;
+      }
+    );
+}
+
+// Fallback: MarketWatch HTML scraping
+export async function scrapeMarketWatch(): Promise<ScrapedEvent[]> {
+  const response = await fetch(MARKETWATCH_URL, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `MarketWatch fetch failed: ${response.status} ${response.statusText}`
+    );
+  }
+
+  const html = await response.text();
+  return parseMarketWatchHTML(html);
+}
+
+export function parseMarketWatchHTML(html: string): ScrapedEvent[] {
+  const $ = cheerio.load(html);
+  const events: ScrapedEvent[] = [];
+  let currentDate = "";
+
+  // Try multiple possible table selectors
+  const tableSelectors = [
+    "table.table--economic-calendar tr",
+    "table.calendar tr",
+    ".economic-calendar table tr",
+    "table tr",
+  ];
+
+  for (const selector of tableSelectors) {
+    const rows = $(selector);
+    if (rows.length === 0) continue;
+
+    rows.each((_, row) => {
+      const $row = $(row);
+      const tds = $row.find("td");
+      const ths = $row.find("th");
+
+      // Date header row
+      if (ths.length > 0 || (tds.length <= 2 && tds.length > 0)) {
+        const text = (ths.text() || tds.text()).trim();
+        if (text.match(/(Mon|Tue|Wed|Thu|Fri|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i)) {
+          currentDate = text;
+          return;
+        }
+      }
+
+      if (tds.length < 3) return;
+
+      const time = tds.eq(0).text().trim();
+      const eventName = tds.eq(1).text().trim();
+      if (!eventName || eventName.length < 3) return;
+
+      const period = tds.eq(2).text().trim();
+      const actual = tds.eq(3).text().trim();
+      const forecast = tds.eq(4).text().trim();
+      const previous = tds.eq(5).text().trim();
+
+      const dateTime = currentDate
+        ? parseDateTime(currentDate, time)
+        : new Date();
+
+      events.push({
+        eventName,
+        eventSlug: slugify(eventName),
+        dateTime,
+        period: period && period !== "--" ? period : undefined,
+        actual: actual && actual !== "--" ? actual : undefined,
+        forecast: forecast && forecast !== "--" ? forecast : undefined,
+        previous: previous && previous !== "--" ? previous : undefined,
+        importance: inferImportance(eventName),
+        category: categorizeEvent(eventName),
+        sourceUrl: MARKETWATCH_URL,
+      });
+    });
+
+    if (events.length > 0) break;
+  }
+
+  return events;
+}
+
+function parseDateTime(dateStr: string, timeStr: string): Date {
   const cleanDate = dateStr.replace(/\./g, "").trim();
   const dateParsed = new Date(cleanDate);
 
   if (isNaN(dateParsed.getTime())) {
-    // Fallback: try current year
+    const currentYear = new Date().getFullYear();
     const withYear = `${cleanDate} ${currentYear}`;
     const fallback = new Date(withYear);
     if (!isNaN(fallback.getTime())) {
@@ -175,146 +341,33 @@ function applyTime(date: Date, timeStr: string): Date {
   return date;
 }
 
-export async function scrapeMarketWatch(): Promise<ScrapedEvent[]> {
-  const response = await fetch(MARKETWATCH_URL, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Cache-Control": "no-cache",
-    },
-  });
+// Main scrape function - tries Finnhub first, falls back to MarketWatch
+export async function scrapeEconomicCalendar(): Promise<ScrapedEvent[]> {
+  const finnhubKey = process.env.FINNHUB_API_KEY;
 
-  if (!response.ok) {
-    throw new Error(
-      `MarketWatch fetch failed: ${response.status} ${response.statusText}`
-    );
+  // Try Finnhub first
+  if (finnhubKey) {
+    try {
+      const events = await scrapeFromFinnhub(finnhubKey);
+      if (events.length > 0) {
+        console.log(`Scraped ${events.length} events from Finnhub`);
+        return events;
+      }
+    } catch (err) {
+      console.error("Finnhub scrape failed, trying MarketWatch:", err);
+    }
   }
 
-  const html = await response.text();
-  return parseMarketWatchHTML(html);
-}
-
-export function parseMarketWatchHTML(html: string): ScrapedEvent[] {
-  const $ = cheerio.load(html);
-  const events: ScrapedEvent[] = [];
-  let currentDate = "";
-
-  // MarketWatch calendar uses a table structure
-  // Date header rows contain the date, followed by event rows
-  $("table.table--economic-calendar tr, table.calendar tr, .economic-calendar table tr").each(
-    (_, row) => {
-      const $row = $(row);
-
-      // Check if this is a date header row
-      const dateHeader =
-        $row.find("th.cell--date, td.date-cell, th[colspan]").text().trim() ||
-        $row.find("td:first-child").text().trim();
-
-      // If the row has a date-like pattern and few cells, it's a date header
-      const cells = $row.find("td, th");
-      if (cells.length <= 2 && dateHeader.match(/\w+\.?\s+\d{1,2}/)) {
-        currentDate = dateHeader;
-        return;
-      }
-
-      // Try to extract event data from this row
-      const tds = $row.find("td");
-      if (tds.length < 3) return;
-
-      // Try multiple MarketWatch table formats
-      const time = tds.eq(0).text().trim();
-      const eventName = tds.eq(1).text().trim() || tds.eq(0).text().trim();
-
-      if (!eventName || eventName.length < 3) return;
-
-      // Skip if it looks like a date header
-      if (
-        eventName.match(
-          /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i
-        )
-      )
-        return;
-
-      const period = tds.eq(2).text().trim() || undefined;
-      const actual = tds.eq(3).text().trim() || undefined;
-      const forecast = tds.eq(4).text().trim() || undefined;
-      const previous = tds.eq(5).text().trim() || undefined;
-
-      // Use a date if we have one, otherwise use today
-      const dateTime = currentDate
-        ? parseDateTime(currentDate, time)
-        : new Date();
-
-      events.push({
-        eventName,
-        eventSlug: slugify(eventName),
-        dateTime,
-        period: period && period !== "--" ? period : undefined,
-        actual: actual && actual !== "--" ? actual : undefined,
-        forecast: forecast && forecast !== "--" ? forecast : undefined,
-        previous: previous && previous !== "--" ? previous : undefined,
-        importance: inferImportance(eventName),
-        category: categorizeEvent(eventName),
-        sourceUrl: MARKETWATCH_URL,
-      });
+  // Fallback to MarketWatch
+  try {
+    const events = await scrapeMarketWatch();
+    if (events.length > 0) {
+      console.log(`Scraped ${events.length} events from MarketWatch`);
+      return events;
     }
-  );
-
-  // Also try parsing with a more generic approach if no events found
-  if (events.length === 0) {
-    return parseGenericCalendar($);
+  } catch (err) {
+    console.error("MarketWatch scrape failed:", err);
   }
 
-  return events;
-}
-
-function parseGenericCalendar($: cheerio.CheerioAPI): ScrapedEvent[] {
-  const events: ScrapedEvent[] = [];
-  let currentDate = "";
-
-  // Try div-based layout that MarketWatch might use
-  $("[class*='calendar'] [class*='row'], [class*='economic'] [class*='row']").each(
-    (_, el) => {
-      const $el = $(el);
-      const text = $el.text().trim();
-
-      // Check for date headers
-      const dateMatch = text.match(
-        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{1,2}/i
-      );
-      if (dateMatch && text.length < 50) {
-        currentDate = text;
-        return;
-      }
-
-      // Try to extract structured data
-      const children = $el.children();
-      if (children.length >= 3) {
-        const eventName = children.eq(1).text().trim() || children.eq(0).text().trim();
-        if (eventName && eventName.length > 3) {
-          const time = children.eq(0).text().trim();
-          const dateTime = currentDate
-            ? parseDateTime(currentDate, time)
-            : new Date();
-
-          events.push({
-            eventName,
-            eventSlug: slugify(eventName),
-            dateTime,
-            period: children.eq(2).text().trim() || undefined,
-            actual: children.eq(3)?.text().trim() || undefined,
-            forecast: children.eq(4)?.text().trim() || undefined,
-            previous: children.eq(5)?.text().trim() || undefined,
-            importance: inferImportance(eventName),
-            category: categorizeEvent(eventName),
-            sourceUrl: MARKETWATCH_URL,
-          });
-        }
-      }
-    }
-  );
-
-  return events;
+  return [];
 }

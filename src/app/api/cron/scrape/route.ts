@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { scrapeMarketWatch } from "@/lib/scraper";
+import { scrapeEconomicCalendar } from "@/lib/scraper";
 
 export async function GET(request: NextRequest) {
   // Verify cron secret in production
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const events = await scrapeMarketWatch();
+    const events = await scrapeEconomicCalendar();
 
     if (events.length === 0) {
       return NextResponse.json({

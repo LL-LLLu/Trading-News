@@ -1,38 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, parseISO } from "date-fns";
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  parseISO,
+  subMonths,
+} from "date-fns";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
-  const week = searchParams.get("week"); // ISO date string for week
+  const week = searchParams.get("week");
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
+  const month = searchParams.get("month");
+  const mode = searchParams.get("mode"); // "all" to skip date filter
   const importance = searchParams.get("importance");
   const category = searchParams.get("category");
   const search = searchParams.get("search");
-  const limit = parseInt(searchParams.get("limit") || "100");
+  const limit = parseInt(searchParams.get("limit") || "200");
   const offset = parseInt(searchParams.get("offset") || "0");
   const includeAnalysis = searchParams.get("includeAnalysis") !== "false";
 
-  // Build date range
-  let dateFrom: Date;
-  let dateTo: Date;
+  let dateFrom: Date | undefined;
+  let dateTo: Date | undefined;
 
-  if (week) {
+  if (mode === "all") {
+    // No date filter - return all events
+    dateFrom = undefined;
+    dateTo = undefined;
+  } else if (from && to) {
+    dateFrom = parseISO(from);
+    dateTo = parseISO(to);
+  } else if (month) {
+    const monthDate = parseISO(month);
+    dateFrom = startOfMonth(monthDate);
+    dateTo = endOfMonth(monthDate);
+  } else if (week) {
     const weekDate = parseISO(week);
     dateFrom = startOfWeek(weekDate, { weekStartsOn: 1 });
     dateTo = endOfWeek(weekDate, { weekStartsOn: 1 });
   } else {
-    // Default to current week
     const now = new Date();
     dateFrom = startOfWeek(now, { weekStartsOn: 1 });
     dateTo = endOfWeek(now, { weekStartsOn: 1 });
   }
 
   try {
-    const where: Record<string, unknown> = {
-      dateTime: { gte: dateFrom, lte: dateTo },
-    };
+    const where: Record<string, unknown> = {};
 
+    if (dateFrom && dateTo) {
+      where.dateTime = { gte: dateFrom, lte: dateTo };
+    }
     if (importance) {
       where.importance = importance;
     }
@@ -47,7 +68,7 @@ export async function GET(request: NextRequest) {
       prisma.economicEvent.findMany({
         where,
         include: includeAnalysis ? { analysis: true } : undefined,
-        orderBy: { dateTime: "asc" },
+        orderBy: { dateTime: "desc" },
         take: limit,
         skip: offset,
       }),
@@ -57,8 +78,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       events,
       total,
-      weekStart: dateFrom.toISOString(),
-      weekEnd: dateTo.toISOString(),
+      dateFrom: dateFrom?.toISOString(),
+      dateTo: dateTo?.toISOString(),
     });
   } catch (error) {
     console.error("Events API error:", error);

@@ -35,33 +35,21 @@ export default function CalendarPage() {
   const fetchEvents = useCallback(async () => {
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
-    // Fetch a wider range to cover partial weeks at month boundaries
     const rangeStart = startOfWeek(monthStart, { weekStartsOn: 1 });
     const rangeEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
 
     try {
-      const res = await fetch(
-        `/api/events?week=${rangeStart.toISOString()}&includeAnalysis=false&limit=500`
-      );
+      const params = new URLSearchParams({
+        from: rangeStart.toISOString(),
+        to: rangeEnd.toISOString(),
+        includeAnalysis: "false",
+        limit: "500",
+      });
+      const res = await fetch(`/api/events?${params}`);
       const data = await res.json();
       setEvents(data.events || []);
     } catch {
-      // For month view, fetch week by week
-      const allEvents: CalendarEvent[] = [];
-      let current = rangeStart;
-      while (current < rangeEnd) {
-        try {
-          const res = await fetch(
-            `/api/events?week=${current.toISOString()}&includeAnalysis=false`
-          );
-          const data = await res.json();
-          allEvents.push(...(data.events || []));
-        } catch {
-          /* skip */
-        }
-        current = addDays(current, 7);
-      }
-      setEvents(allEvents);
+      setEvents([]);
     }
   }, [currentMonth]);
 
@@ -160,55 +148,56 @@ export default function CalendarPage() {
           </div>
 
           {/* Weeks */}
-          {(viewMode === "week" ? [weeks.find((w) => w.some((d) => isToday(d))) || weeks[0]] : weeks).map(
-            (week, wi) => (
-              <div
-                key={wi}
-                className="grid grid-cols-7 border-b last:border-b-0 border-gray-200 dark:border-gray-800"
-              >
-                {week.map((dayDate, di) => {
-                  const dayEvents = getEventsForDay(dayDate);
-                  const inMonth = isSameMonth(dayDate, currentMonth);
-                  const today = isToday(dayDate);
+          {(viewMode === "week"
+            ? [weeks.find((w) => w.some((d) => isToday(d))) || weeks[0]]
+            : weeks
+          ).map((week, wi) => (
+            <div
+              key={wi}
+              className="grid grid-cols-7 border-b last:border-b-0 border-gray-200 dark:border-gray-800"
+            >
+              {week.map((dayDate, di) => {
+                const dayEvents = getEventsForDay(dayDate);
+                const inMonth = isSameMonth(dayDate, currentMonth);
+                const today = isToday(dayDate);
 
-                  return (
-                    <div
-                      key={di}
-                      className={`min-h-[100px] md:min-h-[120px] p-2 border-r last:border-r-0 border-gray-200 dark:border-gray-800 ${
-                        !inMonth ? "opacity-40" : ""
-                      } ${today ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""}`}
+                return (
+                  <div
+                    key={di}
+                    className={`min-h-[100px] md:min-h-[120px] p-2 border-r last:border-r-0 border-gray-200 dark:border-gray-800 ${
+                      !inMonth ? "opacity-40" : ""
+                    } ${today ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""}`}
+                  >
+                    <span
+                      className={`text-sm font-medium ${
+                        today
+                          ? "bg-emerald-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center"
+                          : "text-gray-700 dark:text-gray-300"
+                      }`}
                     >
-                      <span
-                        className={`text-sm font-medium ${
-                          today
-                            ? "bg-emerald-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center"
-                            : "text-gray-700 dark:text-gray-300"
-                        }`}
-                      >
-                        {format(dayDate, "d")}
-                      </span>
-                      <div className="mt-1 space-y-0.5">
-                        {dayEvents.slice(0, 3).map((ev) => (
-                          <Link key={ev.id} href={`/events/${ev.id}`}>
-                            <div
-                              className={`text-[10px] px-1.5 py-0.5 rounded truncate text-white font-medium ${importanceColor[ev.importance]}`}
-                            >
-                              {ev.eventName}
-                            </div>
-                          </Link>
-                        ))}
-                        {dayEvents.length > 3 && (
-                          <div className="text-[10px] text-gray-500 dark:text-gray-500 pl-1.5">
-                            +{dayEvents.length - 3} more
+                      {format(dayDate, "d")}
+                    </span>
+                    <div className="mt-1 space-y-0.5">
+                      {dayEvents.slice(0, 3).map((ev) => (
+                        <Link key={ev.id} href={`/events/${ev.id}`}>
+                          <div
+                            className={`text-[10px] px-1.5 py-0.5 rounded truncate text-white font-medium ${importanceColor[ev.importance]}`}
+                          >
+                            {ev.eventName}
                           </div>
-                        )}
-                      </div>
+                        </Link>
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <div className="text-[10px] text-gray-500 dark:text-gray-500 pl-1.5">
+                          +{dayEvents.length - 3} more
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )
-          )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
     </div>
