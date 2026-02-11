@@ -1,0 +1,102 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Importance {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum Category {
+  EMPLOYMENT
+  INFLATION
+  GDP
+  MANUFACTURING
+  HOUSING
+  CONSUMER
+  TRADE
+  MONETARY_POLICY
+  GOVERNMENT
+  ENERGY
+  OTHER
+}
+
+enum ImpactDirection {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+model EconomicEvent {
+  id         String    @id @default(cuid())
+  eventName  String
+  eventSlug  String
+  dateTime   DateTime
+  period     String?
+  actual     String?
+  forecast   String?
+  previous   String?
+  unit       String?
+  importance Importance @default(MEDIUM)
+  category   Category   @default(OTHER)
+  sourceUrl  String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  analysis   EventAnalysis?
+
+  @@unique([eventSlug, dateTime])
+  @@index([dateTime])
+  @@index([importance])
+  @@index([category])
+}
+
+model EventAnalysis {
+  id                   String          @id @default(cuid())
+  eventId              String          @unique
+  event                EconomicEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  impactScore          Int
+  impactDirection      ImpactDirection
+  summary              String
+  detailedAnalysis     String
+  affectedSectors      Json
+  affectedAssets       Json
+  tradingImplications  Json
+  historicalContext     String
+  riskFactors          Json
+  keyLevelsToWatch     String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+}
+
+model WeeklyOutlook {
+  id                String   @id @default(cuid())
+  weekStart         DateTime
+  weekEnd           DateTime
+  overallSentiment  ImpactDirection
+  executiveSummary  String
+  keyEvents         Json
+  themeAnalysis     Json
+  riskAssessment    Json
+  sectorRotation    Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([weekStart])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
