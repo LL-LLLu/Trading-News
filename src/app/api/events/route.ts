@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Events API error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch events" },
+      { error: "Failed to fetch events", details: String(error) },
       { status: 500 }
     );
   }

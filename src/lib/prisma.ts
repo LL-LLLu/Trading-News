@@ -7,11 +7,20 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  const connectionString =
+  let connectionString =
     process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
+  const isSSL = connectionString?.includes("sslmode=");
+  // Strip sslmode from URL — pg v8+ treats sslmode=require as verify-full,
+  // which rejects Supabase's self-signed certs. We handle SSL explicitly.
+  if (isSSL && connectionString) {
+    const url = new URL(connectionString);
+    url.searchParams.delete("sslmode");
+    connectionString = url.toString();
+  }
   const pool = new Pool({
     connectionString,
     connectionTimeoutMillis: 10000,
+    ...(isSSL ? { ssl: { rejectUnauthorized: false } } : {}),
   });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });

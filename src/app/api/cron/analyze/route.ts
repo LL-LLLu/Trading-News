@@ -45,6 +45,8 @@ async function handleEventAnalysis() {
   }
 
   let analyzedCount = 0;
+  const errors: { event: string; error: string }[] = [];
+
   for (const event of unanalyzed) {
     try {
       const analysis = await analyzeEvent({
@@ -74,7 +76,10 @@ async function handleEventAnalysis() {
       });
       analyzedCount++;
     } catch (err) {
-      console.error(`Failed to analyze event: ${event.eventName}`, err);
+      const errMsg =
+        err instanceof Error ? err.message : String(err);
+      console.error(`Failed to analyze event: ${event.eventName}`, errMsg);
+      errors.push({ event: event.eventName, error: errMsg });
     }
   }
 
@@ -82,6 +87,7 @@ async function handleEventAnalysis() {
     message: "Analysis completed",
     analyzed: analyzedCount,
     total: unanalyzed.length,
+    errors: errors.length > 0 ? errors : undefined,
   });
 }
 
