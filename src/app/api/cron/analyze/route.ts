@@ -5,6 +5,7 @@ import {
   analyzeEvent,
   generateWeeklyOutlook,
   generateWebForecast,
+  generateWeeklySentiment,
 } from "@/lib/gemini";
 import { startOfWeek, endOfWeek } from "date-fns";
 
@@ -28,6 +29,10 @@ export async function GET(request: NextRequest) {
     }
     if (mode === "forecast") {
       return await handleWebForecasts(force);
+    }
+    if (mode === "sentiment") {
+      await regenerateWeeklySentiment();
+      return NextResponse.json({ message: "Weekly sentiment regenerated" });
     }
     return await handleEventAnalysis(force);
   } catch (error) {
@@ -95,6 +100,15 @@ async function handleEventAnalysis(force = false) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`Failed to analyze event: ${event.eventName}`, errMsg);
       errors.push({ event: event.eventName, error: errMsg });
+    }
+  }
+
+  // Regenerate weekly sentiment after event analyses change
+  if (analyzedCount > 0) {
+    try {
+      await regenerateWeeklySentiment();
+    } catch (err) {
+      console.error("Failed to regenerate weekly sentiment:", err);
     }
   }
 
@@ -250,4 +264,62 @@ async function handleWebForecasts(force = false) {
     total: events.length,
     errors: errors.length > 0 ? errors : undefined,
   });
+}
+
+async function regenerateWeeklySentiment() {
+  const now = new Date();
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+  const events = await prisma.economicEvent.findMany({
+    where: { dateTime: { gte: weekStart, lte: weekEnd } },
+    include: { analysis: true },
+    orderBy: { dateTime: "asc" },
+  });
+
+  // Need at least one analyzed event to generate sentiment
+  const analyzedEvents = events.filter((e) => e.analysis);
+  if (analyzedEvents.length === 0) {
+    console.log("[WeeklySentiment] No analyzed events yet, skipping");
+    return;
+  }
+
+  console.log(
+    `[WeeklySentiment] Regenerating for ${analyzedEvents.length} analyzed events`,
+  );
+
+  const result = await generateWeeklySentiment(
+    events.map((e) => ({
+      eventName: e.eventName,
+      dateTime: e.dateTime,
+      period: e.period,
+      actual: e.actual,
+      forecast: e.forecast,
+      previous: e.previous,
+      importance: e.importance,
+      analysis: e.analysis
+        ? {
+            impactScore: e.analysis.impactScore,
+            impactDirection: e.analysis.impactDirection,
+            summary: e.analysis.summary,
+          }
+        : null,
+    })),
+  );
+
+  await prisma.weeklySentiment.upsert({
+    where: { weekStart },
+    create: {
+      weekStart,
+      weekEnd,
+      sentiment: result.sentiment,
+      markdown: result.markdown,
+    },
+    update: {
+      sentiment: result.sentiment,
+      markdown: result.markdown,
+    },
+  });
+
+  console.log(`[WeeklySentiment] Updated: ${result.sentiment}`);
 }

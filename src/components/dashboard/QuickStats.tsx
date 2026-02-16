@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   FiCalendar,
   FiAlertTriangle,
@@ -35,9 +35,18 @@ export function QuickStats({
   const [showModal, setShowModal] = useState(false);
 
   const sentimentConfig = {
-    BULLISH: { color: "text-green-600 dark:text-green-400", labelKey: "stats.bullish" as const },
-    BEARISH: { color: "text-red-600 dark:text-red-400", labelKey: "stats.bearish" as const },
-    NEUTRAL: { color: "text-gray-600 dark:text-gray-400", labelKey: "stats.neutral" as const },
+    BULLISH: {
+      color: "text-green-600 dark:text-green-400",
+      labelKey: "stats.bullish" as const,
+    },
+    BEARISH: {
+      color: "text-red-600 dark:text-red-400",
+      labelKey: "stats.bearish" as const,
+    },
+    NEUTRAL: {
+      color: "text-gray-600 dark:text-gray-400",
+      labelKey: "stats.neutral" as const,
+    },
   };
 
   const sentiment = weekSentiment ? sentimentConfig[weekSentiment] : null;
@@ -103,7 +112,7 @@ function SentimentModal({
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -114,46 +123,17 @@ function SentimentModal({
     fetch(`/api/sentiment?${params}`, { signal: abortController.signal })
       .then(async (res) => {
         if (!res.ok) {
-          setError("Failed to load sentiment analysis");
+          const data = await res.json().catch(() => null);
+          setError(
+            data?.error || "No sentiment analysis available yet for this week.",
+          );
           setLoading(false);
           return;
         }
 
-        const reader = res.body?.getReader();
-        if (!reader) return;
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") {
-                setLoading(false);
-                continue;
-              }
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.error) {
-                  setError(parsed.error);
-                  setLoading(false);
-                } else if (parsed.text) {
-                  setContent((prev) => prev + parsed.text);
-                }
-              } catch {
-                // ignore parse errors
-              }
-            }
-          }
-        }
+        const data = await res.json();
+        setContent(data.markdown);
+        setUpdatedAt(data.updatedAt);
         setLoading(false);
       })
       .catch((err) => {
@@ -165,13 +145,6 @@ function SentimentModal({
 
     return () => abortController.abort();
   }, [currentWeek]);
-
-  // Auto-scroll as content streams in
-  useEffect(() => {
-    if (contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-    }
-  }, [content]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -200,24 +173,24 @@ function SentimentModal({
         </div>
 
         {/* Content */}
-        <div ref={contentRef} className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           {error ? (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           ) : content ? (
-            <MarkdownRenderer content={content} />
+            <>
+              <MarkdownRenderer content={content} />
+              {updatedAt && (
+                <p className="mt-4 pt-3 border-t border-[#E5E0D8] dark:border-[#2D2D2D] text-[10px] text-[#6B7280]">
+                  Last updated: {new Date(updatedAt).toLocaleString()}
+                </p>
+              )}
+            </>
           ) : loading ? (
             <div className="flex items-center gap-2 text-sm text-[#6B7280]">
               <div className="w-4 h-4 border-2 border-[#0F4C81] border-t-transparent rounded-full animate-spin" />
-              Analyzing this week&apos;s events...
+              Loading sentiment analysis...
             </div>
           ) : null}
-
-          {loading && content && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-[#6B7280]">
-              <div className="w-3 h-3 border-2 border-[#0F4C81] border-t-transparent rounded-full animate-spin" />
-              Generating...
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -275,9 +248,7 @@ function StatCard({
         {value}
       </p>
       {subtitle && (
-        <p className="text-xs text-[#6B7280] truncate mt-0.5">
-          {subtitle}
-        </p>
+        <p className="text-xs text-[#6B7280] truncate mt-0.5">{subtitle}</p>
       )}
       {clickable && (
         <p className="text-[10px] text-[#0F4C81] dark:text-[#5BA3D9] mt-1">

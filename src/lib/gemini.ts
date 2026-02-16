@@ -180,20 +180,22 @@ export async function analyzeEvent(event: {
   return JSON.parse(text) as EventAnalysisResult;
 }
 
-export async function generateWeeklyOutlook(events: {
-  eventName: string;
-  dateTime: Date;
-  actual?: string | null;
-  forecast?: string | null;
-  previous?: string | null;
-  category: string;
-  importance: string;
-  analysis?: {
-    impactScore: number;
-    impactDirection: string;
-    summary: string;
-  } | null;
-}[]): Promise<WeeklyOutlookResult> {
+export async function generateWeeklyOutlook(
+  events: {
+    eventName: string;
+    dateTime: Date;
+    actual?: string | null;
+    forecast?: string | null;
+    previous?: string | null;
+    category: string;
+    importance: string;
+    analysis?: {
+      impactScore: number;
+      impactDirection: string;
+      summary: string;
+    } | null;
+  }[],
+): Promise<WeeklyOutlookResult> {
   // Step 1: Web research with Google Search grounding
   console.log("[Outlook] Step 1: Gathering web research with Google Search...");
   const researchPrompt = buildWeeklyResearchPrompt(events);
@@ -209,7 +211,7 @@ export async function generateWeeklyOutlook(events: {
 
   const webResearch = researchResponse.text || "";
   console.log(
-    `[Outlook] Research gathered: ${webResearch.length} chars from web`
+    `[Outlook] Research gathered: ${webResearch.length} chars from web`,
   );
 
   // Step 2: Generate structured outlook using research as context
@@ -223,6 +225,112 @@ export async function generateWeeklyOutlook(events: {
   });
 
   return JSON.parse(text) as WeeklyOutlookResult;
+}
+
+export async function generateWeeklySentiment(
+  events: {
+    eventName: string;
+    dateTime: Date;
+    period?: string | null;
+    actual?: string | null;
+    forecast?: string | null;
+    previous?: string | null;
+    importance: string;
+    analysis?: {
+      impactScore: number;
+      impactDirection: string;
+      summary: string;
+    } | null;
+  }[],
+): Promise<{ sentiment: "BULLISH" | "BEARISH" | "NEUTRAL"; markdown: string }> {
+  const { format } = await import("date-fns");
+
+  const eventContext = events
+    .map((e) => {
+      const dateStr = format(e.dateTime, "EEE MMM d, h:mm a");
+      let ctx = `[${e.importance}] ${dateStr}: ${e.eventName}`;
+      if (e.actual) ctx += ` | Actual: ${e.actual}`;
+      if (e.forecast) ctx += ` | Forecast: ${e.forecast}`;
+      if (e.previous) ctx += ` | Previous: ${e.previous}`;
+      if (e.analysis) {
+        ctx += ` | Impact: ${e.analysis.impactScore}/10 ${e.analysis.impactDirection}`;
+        ctx += ` | Summary: ${e.analysis.summary}`;
+      }
+      return ctx;
+    })
+    .join("\n");
+
+  const weekStart = events.length > 0 ? events[0].dateTime : new Date();
+  const weekEnd =
+    events.length > 0 ? events[events.length - 1].dateTime : new Date();
+
+  const prompt = `You are a senior market strategist. Based on the following economic events and their AI analysis for the week of ${format(weekStart, "MMM d")} - ${format(weekEnd, "MMM d, yyyy")}, provide:
+
+1. The overall weekly sentiment (BULLISH, BEARISH, or NEUTRAL)
+2. A clear, detailed explanation of WHY this week leans that direction — reference specific events, data points, and their market implications
+3. A counter argument presenting the opposite perspective — why someone could reasonably argue the other side
+
+Events this week:
+${eventContext}
+
+Respond in this exact markdown format:
+
+## Weekly Sentiment: [BULLISH/BEARISH/NEUTRAL]
+
+### Why This Week Is [Bullish/Bearish/Neutral]
+
+[2-4 paragraphs explaining the reasoning, referencing specific events and data]
+
+### Counter Argument: The [Bull/Bear] Case
+
+[2-3 paragraphs presenting the opposite view with specific reasoning]
+
+### Key Events to Watch
+
+[Bullet list of the 3-5 most important events and why they matter]
+
+Be specific with data points and event names. Write for an informed retail trader.`;
+
+  let response;
+  let lastError: unknown;
+  for (const model of ANALYSIS_MODELS) {
+    try {
+      response = await genAI.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.4,
+        },
+      });
+      console.log(`[WeeklySentiment] Success with model: ${model}`);
+      break;
+    } catch (err) {
+      const errStr = String(err);
+      if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED")) {
+        console.warn(
+          `[WeeklySentiment] ${model} quota exhausted, trying fallback...`,
+        );
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (!response) throw lastError;
+
+  const markdown = response.text || "";
+
+  // Parse sentiment from the markdown heading
+  let sentiment: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+  const match = markdown.match(
+    /Weekly Sentiment:\s*(BULLISH|BEARISH|NEUTRAL)/i,
+  );
+  if (match) {
+    sentiment = match[1].toUpperCase() as "BULLISH" | "BEARISH" | "NEUTRAL";
+  }
+
+  return { sentiment, markdown };
 }
 
 export interface WebForecastResult {
@@ -303,7 +411,9 @@ Be specific with analyst names/firms, forecast ranges, and relevant economic con
     } catch (err) {
       const errStr = String(err);
       if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED")) {
-        console.warn(`[WebForecast] ${model} quota exhausted, trying fallback...`);
+        console.warn(
+          `[WebForecast] ${model} quota exhausted, trying fallback...`,
+        );
         lastError = err;
         continue;
       }
@@ -336,7 +446,7 @@ Be specific with analyst names/firms, forecast ranges, and relevant economic con
 
 export async function* streamChat(
   messages: { role: string; content: string }[],
-  eventContext: string
+  eventContext: string,
 ): AsyncGenerator<string> {
   const systemPrompt = buildChatPrompt(eventContext);
 
