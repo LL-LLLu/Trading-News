@@ -7,17 +7,21 @@ import {
   FiCalendar,
   FiTrendingUp,
   FiClock,
-  FiGrid,
+  FiFileText,
 } from "react-icons/fi";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { TranslationKey } from "@/lib/i18n";
 
-const navItems: { href: string; labelKey: TranslationKey; icon: typeof FiHome }[] = [
+const navItems: {
+  href: string;
+  labelKey: TranslationKey;
+  icon: typeof FiHome;
+}[] = [
   { href: "/", labelKey: "nav.home", icon: FiHome },
   { href: "/calendar", labelKey: "nav.calendar", icon: FiCalendar },
   { href: "/outlook", labelKey: "nav.outlook", icon: FiTrendingUp },
   { href: "/history", labelKey: "nav.history", icon: FiClock },
-  { href: "/sectors", labelKey: "nav.sectors", icon: FiGrid },
+  { href: "/evaluations", labelKey: "nav.evaluations", icon: FiFileText },
 ];
 
 export function MobileNav() {

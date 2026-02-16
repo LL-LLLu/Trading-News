@@ -9,6 +9,7 @@ export const translations = {
   "nav.sectors": { en: "Sectors", zh: "板块" },
   "nav.settings": { en: "Settings", zh: "设置" },
   "nav.home": { en: "Home", zh: "首页" },
+  "nav.evaluations": { en: "Evaluations", zh: "股票评估" },
 
   // ── Header / Brand ──
   "brand.title": { en: "Trading News", zh: "交易资讯" },

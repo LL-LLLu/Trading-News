@@ -114,3 +114,18 @@ model Notification {
 
   @@index([createdAt])
 }
+
+model StockEvaluation {
+  id         String   @id @default(cuid())
+  ticker     String
+  title      String
+  slug       String   @unique
+  content    String
+  coverImage String?
+  published  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([ticker])
+  @@index([published, createdAt])
+}

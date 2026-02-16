@@ -9,16 +9,22 @@ import {
   FiClock,
   FiGrid,
   FiSettings,
+  FiFileText,
 } from "react-icons/fi";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { TranslationKey } from "@/lib/i18n";
 
-const navItems: { href: string; labelKey: TranslationKey; icon: typeof FiHome }[] = [
+const navItems: {
+  href: string;
+  labelKey: TranslationKey;
+  icon: typeof FiHome;
+}[] = [
   { href: "/", labelKey: "nav.dashboard", icon: FiHome },
   { href: "/calendar", labelKey: "nav.calendar", icon: FiCalendar },
   { href: "/outlook", labelKey: "nav.outlook", icon: FiTrendingUp },
   { href: "/history", labelKey: "nav.history", icon: FiClock },
+  { href: "/evaluations", labelKey: "nav.evaluations", icon: FiFileText },
   { href: "/sectors", labelKey: "nav.sectors", icon: FiGrid },
   { href: "/settings", labelKey: "nav.settings", icon: FiSettings },
 ];
@@ -72,9 +78,7 @@ export function Sidebar() {
       {/* Theme toggle */}
       <div className="px-4 py-3 border-t border-[#E5E0D8] dark:border-[#2D2D2D]">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-[#6B7280]">
-            {t("sidebar.theme")}
-          </span>
+          <span className="text-xs text-[#6B7280]">{t("sidebar.theme")}</span>
           <ThemeToggle />
         </div>
       </div>
