@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { startOfWeek, endOfWeek } from "date-fns";
+import Fuse from "fuse.js";
 import { FiSearch, FiFilter } from "react-icons/fi";
 import { Header } from "@/components/layout/Header";
 import { QuickStats } from "@/components/dashboard/QuickStats";
@@ -51,15 +52,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [direction, setDirection] = useState<string | null>(null);
-
-  // 300ms debounce for search input
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -72,7 +66,6 @@ export default function DashboardPage() {
         to: weekEnd.toISOString(),
       });
       if (filter) params.set("importance", filter);
-      if (debouncedSearch) params.set("search", debouncedSearch);
       if (category) params.set("category", category);
 
       const res = await fetch(`/api/events?${params}`);
@@ -83,7 +76,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentWeek, filter, debouncedSearch, category]);
+  }, [currentWeek, filter, category]);
 
   useEffect(() => {
     fetchEvents();
@@ -111,10 +104,27 @@ export default function DashboardPage() {
     else weekSentiment = "NEUTRAL";
   }
 
-  // Apply direction filter client-side
-  const filteredEvents = direction
-    ? events.filter((e) => e.analysis?.impactDirection === direction)
-    : events;
+  // Fuzzy search + direction filter (both client-side)
+  const fuse = useMemo(
+    () =>
+      new Fuse(events, {
+        keys: ["eventName", "category"],
+        threshold: 0.4,
+        ignoreLocation: true,
+      }),
+    [events],
+  );
+
+  const filteredEvents = useMemo(() => {
+    let result = events;
+    if (search.trim()) {
+      result = fuse.search(search.trim()).map((r) => r.item);
+    }
+    if (direction) {
+      result = result.filter((e) => e.analysis?.impactDirection === direction);
+    }
+    return result;
+  }, [events, search, direction, fuse]);
 
   return (
     <div className="min-h-screen">
