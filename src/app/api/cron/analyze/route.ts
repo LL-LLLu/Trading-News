@@ -45,7 +45,7 @@ async function handleEventAnalysis(force = false) {
     where: force ? {} : { analysis: null },
     include: { analysis: true },
     orderBy: { dateTime: "asc" },
-    take: 3, // Process in small batches for slower pro models
+    take: 10,
   });
 
   if (events.length === 0) {
@@ -203,7 +203,7 @@ async function handleWebForecasts(force = false) {
     },
     include: { analysis: true },
     orderBy: { dateTime: "asc" },
-    take: 3,
+    take: 10,
   });
 
   if (events.length === 0) {
