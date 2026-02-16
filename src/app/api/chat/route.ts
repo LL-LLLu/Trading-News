@@ -1,13 +1,21 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { streamChat } from "@/lib/gemini";
+import { GoogleGenAI } from "@google/genai";
+import { buildChatPrompt } from "@/lib/prompts";
 import { startOfWeek, endOfWeek, format } from "date-fns";
 
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, sessionId } = await request.json();
+    const { messages, sessionId, apiKey } = await request.json();
+
+    if (!apiKey || typeof apiKey !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Gemini API key is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Messages required" }), {
@@ -56,6 +64,18 @@ export async function POST(request: NextRequest) {
       })
       .join("\n");
 
+    // Use the user-provided API key
+    const userGenAI = new GoogleGenAI({ apiKey });
+    const systemPrompt = buildChatPrompt(eventContext);
+
+    const contents = [
+      { role: "user" as const, parts: [{ text: systemPrompt }] },
+      ...messages.map((m: { role: string; content: string }) => ({
+        role: (m.role === "user" ? "user" : "model") as "user" | "model",
+        parts: [{ text: m.content }],
+      })),
+    ];
+
     // Stream response
     const encoder = new TextEncoder();
     let assistantContent = "";
@@ -63,11 +83,22 @@ export async function POST(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of streamChat(messages, eventContext)) {
-            assistantContent += chunk;
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`)
-            );
+          const response = await userGenAI.models.generateContentStream({
+            model: "gemini-2.5-flash",
+            contents,
+            config: { temperature: 0.7 },
+          });
+
+          for await (const chunk of response) {
+            const text = chunk.text;
+            if (text) {
+              assistantContent += text;
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ text })}\n\n`,
+                ),
+              );
+            }
           }
 
           // Save assistant response
@@ -85,10 +116,15 @@ export async function POST(request: NextRequest) {
           controller.close();
         } catch (error) {
           console.error("Chat stream error:", error);
+          const errMsg =
+            String(error).includes("API_KEY_INVALID") ||
+            String(error).includes("401")
+              ? "Invalid API key. Please check your Gemini API key."
+              : "Stream error";
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ error: "Stream error" })}\n\n`
-            )
+              `data: ${JSON.stringify({ error: errMsg })}\n\n`,
+            ),
           );
           controller.close();
         }
@@ -106,7 +142,7 @@ export async function POST(request: NextRequest) {
     console.error("Chat API error:", error);
     return new Response(
       JSON.stringify({ error: "Chat failed", details: String(error) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
 }

@@ -216,6 +216,21 @@ export const translations = {
     zh: "总结本周经济展望",
   },
   "chat.newConversation": { en: "New conversation", zh: "新对话" },
+  "chat.apiKeyRequired": {
+    en: "Enter your Gemini API key to use the chat assistant.",
+    zh: "输入您的 Gemini API 密钥以使用聊天助手。",
+  },
+  "chat.apiKeyPlaceholder": {
+    en: "Paste your Gemini API key",
+    zh: "粘贴您的 Gemini API 密钥",
+  },
+  "chat.apiKeyStart": { en: "Start Chatting", zh: "开始聊天" },
+  "chat.apiKeyGet": { en: "Get a free API key", zh: "获取免费 API 密钥" },
+  "chat.apiKeyStored": {
+    en: "Key stored locally in your browser only.",
+    zh: "密钥仅存储在您的浏览器中。",
+  },
+  "chat.apiKeyChange": { en: "Change API Key", zh: "更改 API 密钥" },
   "chat.error": {
     en: "Sorry, I encountered an error. Please try again.",
     zh: "抱歉，出现了错误。请重试。",

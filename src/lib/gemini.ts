@@ -4,7 +4,6 @@ import {
   buildEventAnalysisPrompt,
   buildWeeklyResearchPrompt,
   buildWeeklyOutlookPrompt,
-  buildChatPrompt,
 } from "./prompts";
 
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -442,32 +441,4 @@ Be specific with analyst names/firms, forecast ranges, and relevant economic con
     forecast: `[${mode === "review" ? "POST-RELEASE REVIEW" : "PRE-RELEASE FORECAST"}]\n\n${text}`,
     sources,
   };
-}
-
-export async function* streamChat(
-  messages: { role: string; content: string }[],
-  eventContext: string,
-): AsyncGenerator<string> {
-  const systemPrompt = buildChatPrompt(eventContext);
-
-  const contents = [
-    { role: "user" as const, parts: [{ text: systemPrompt }] },
-    ...messages.map((m) => ({
-      role: (m.role === "user" ? "user" : "model") as "user" | "model",
-      parts: [{ text: m.content }],
-    })),
-  ];
-
-  const response = await genAI.models.generateContentStream({
-    model: "gemini-2.5-flash",
-    contents,
-    config: {
-      temperature: 0.7,
-    },
-  });
-
-  for await (const chunk of response) {
-    const text = chunk.text;
-    if (text) yield text;
-  }
 }

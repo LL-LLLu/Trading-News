@@ -14,6 +14,7 @@ import {
   FiMaximize2,
   FiMinimize2,
   FiRefreshCw,
+  FiKey,
 } from "react-icons/fi";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { TranslationKey } from "@/lib/i18n";
@@ -31,6 +32,8 @@ const SUGGESTED_QUESTION_KEYS: TranslationKey[] = [
   "chat.q5",
 ];
 
+const API_KEY_STORAGE_KEY = "gemini-api-key";
+
 export function ChatPanel() {
   const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -39,11 +42,21 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [hasBeenOpened, setHasBeenOpened] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = useRef(
     typeof crypto !== "undefined" ? crypto.randomUUID() : "session",
   );
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (stored) setApiKey(stored);
+    setApiKeyLoaded(true);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -56,9 +69,24 @@ export function ChatPanel() {
     }
   }, [isOpen]);
 
+  function handleSaveApiKey() {
+    const key = apiKeyInput.trim();
+    if (!key) return;
+    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+    setApiKey(key);
+    setApiKeyInput("");
+  }
+
+  function handleChangeApiKey() {
+    localStorage.removeItem(API_KEY_STORAGE_KEY);
+    setApiKey(null);
+    setApiKeyInput("");
+    setMessages([]);
+  }
+
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || isStreaming) return;
+      if (!text.trim() || isStreaming || !apiKey) return;
 
       const userMessage: Message = { role: "user", content: text.trim() };
       const updatedMessages = [...messages, userMessage];
@@ -73,10 +101,14 @@ export function ChatPanel() {
           body: JSON.stringify({
             messages: updatedMessages,
             sessionId: sessionId.current,
+            apiKey,
           }),
         });
 
-        if (!response.ok) throw new Error("Chat request failed");
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "Chat request failed");
+        }
 
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
@@ -98,7 +130,25 @@ export function ChatPanel() {
               if (data === "[DONE]") break;
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.text) {
+                if (parsed.error) {
+                  // Show error inline as assistant message
+                  assistantContent = parsed.error;
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = {
+                      role: "assistant",
+                      content: assistantContent,
+                    };
+                    return updated;
+                  });
+                  // If invalid key, clear it
+                  if (
+                    parsed.error.includes("Invalid API key") ||
+                    parsed.error.includes("API_KEY_INVALID")
+                  ) {
+                    handleChangeApiKey();
+                  }
+                } else if (parsed.text) {
                   assistantContent += parsed.text;
                   setMessages((prev) => {
                     const updated = [...prev];
@@ -121,14 +171,17 @@ export function ChatPanel() {
           ...prev,
           {
             role: "assistant",
-            content: t("chat.error"),
+            content:
+              err instanceof Error && err.message !== "Chat request failed"
+                ? err.message
+                : t("chat.error"),
           },
         ]);
       } finally {
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming],
+    [messages, isStreaming, apiKey],
   );
 
   async function handleSubmit(e: React.FormEvent) {
@@ -166,6 +219,9 @@ export function ChatPanel() {
     );
   }
 
+  // API key setup screen
+  const showApiKeySetup = apiKeyLoaded && !apiKey;
+
   return (
     <div
       className={`fixed z-50 bg-white dark:bg-[#1A1A1A] border border-[#E5E0D8] dark:border-[#2D2D2D] shadow-2xl flex flex-col transition-all ${
@@ -186,7 +242,7 @@ export function ChatPanel() {
           </span>
         </div>
         <div className="flex items-center gap-0.5">
-          {messages.length > 0 && (
+          {apiKey && messages.length > 0 && (
             <button
               onClick={handleNewChat}
               className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
@@ -195,11 +251,24 @@ export function ChatPanel() {
               <FiRefreshCw size={13} />
             </button>
           )}
+          {apiKey && (
+            <button
+              onClick={handleChangeApiKey}
+              className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              title={t("chat.apiKeyChange")}
+            >
+              <FiKey size={13} />
+            </button>
+          )}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
           >
-            {isExpanded ? <FiMinimize2 size={14} /> : <FiMaximize2 size={14} />}
+            {isExpanded ? (
+              <FiMinimize2 size={14} />
+            ) : (
+              <FiMaximize2 size={14} />
+            )}
           </button>
           <button
             onClick={() => setIsOpen(false)}
@@ -210,106 +279,153 @@ export function ChatPanel() {
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="py-4">
-            <div className="text-center mb-5">
-              <div className="w-12 h-12 bg-[#0F4C81]/10 dark:bg-[#5BA3D9]/10 rounded-sm flex items-center justify-center mx-auto mb-3">
-                <FiMessageSquare
-                  className="text-[#0F4C81] dark:text-[#5BA3D9]"
-                  size={24}
-                />
-              </div>
-              <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                {t("chat.title")}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-500">
-                {t("chat.desc")}
-              </p>
-            </div>
-
-            {/* Suggested questions */}
-            <div className="space-y-2">
-              <p className="text-[10px] font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider px-1">
-                {t("chat.suggested")}
-              </p>
-              {SUGGESTED_QUESTION_KEYS.map((key) => (
-                <button
-                  key={key}
-                  onClick={() => sendMessage(t(key))}
-                  disabled={isStreaming}
-                  className="w-full text-left px-3 py-2.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 hover:bg-[#0F4C81]/5 dark:hover:bg-[#5BA3D9]/10 hover:text-[#0F4C81] dark:hover:text-[#5BA3D9] rounded-sm border border-[#E5E0D8] dark:border-[#2D2D2D] hover:border-[#0F4C81]/20 dark:hover:border-[#5BA3D9]/20 transition-colors disabled:opacity-50"
-                >
-                  {t(key)}
-                </button>
-              ))}
-            </div>
+      {showApiKeySetup ? (
+        /* API Key Setup */
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <div className="w-14 h-14 bg-[#0F4C81]/10 dark:bg-[#5BA3D9]/10 rounded-sm flex items-center justify-center mb-4">
+            <FiKey className="text-[#0F4C81] dark:text-[#5BA3D9]" size={28} />
           </div>
-        )}
-
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-sm px-4 py-2.5 text-sm ${
-                msg.role === "user"
-                  ? "bg-[#0F4C81] text-white"
-                  : "bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-100 dark:border-gray-700"
-              }`}
+          <h4 className="font-serif text-base font-semibold text-gray-900 dark:text-white mb-2 text-center">
+            {t("chat.title")}
+          </h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-5 leading-relaxed">
+            {t("chat.apiKeyRequired")}
+          </p>
+          <div className="w-full space-y-3">
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSaveApiKey()}
+              placeholder={t("chat.apiKeyPlaceholder")}
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+              autoFocus
+            />
+            <button
+              onClick={handleSaveApiKey}
+              disabled={!apiKeyInput.trim()}
+              className="w-full py-2.5 bg-[#0F4C81] text-white text-sm font-medium rounded-sm hover:bg-[#0F4C81]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {msg.role === "assistant" ? (
-                <ChatMarkdown text={msg.content} />
-              ) : (
-                <p className="whitespace-pre-wrap leading-relaxed">
-                  {msg.content}
-                </p>
-              )}
-            </div>
+              {t("chat.apiKeyStart")}
+            </button>
           </div>
-        ))}
-
-        {isStreaming && messages[messages.length - 1]?.content === "" && (
-          <div className="flex justify-start">
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-sm px-4 py-3 border border-gray-100 dark:border-gray-700">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce [animation-delay:0.15s]" />
-                <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce [animation-delay:0.3s]" />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        className="p-3 border-t border-[#E5E0D8] dark:border-[#2D2D2D]"
-      >
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={t("chat.placeholder")}
-            disabled={isStreaming}
-            className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isStreaming}
-            className="p-2.5 bg-[#0F4C81] text-white rounded-sm hover:bg-[#0F4C81]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-3 text-center">
+            {t("chat.apiKeyStored")}
+          </p>
+          <a
+            href="https://aistudio.google.com/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[#0F4C81] dark:text-[#5BA3D9] hover:underline mt-2"
           >
-            <FiSend size={16} />
-          </button>
+            {t("chat.apiKeyGet")} &rarr;
+          </a>
         </div>
-      </form>
+      ) : (
+        <>
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 && (
+              <div className="py-4">
+                <div className="text-center mb-5">
+                  <div className="w-12 h-12 bg-[#0F4C81]/10 dark:bg-[#5BA3D9]/10 rounded-sm flex items-center justify-center mx-auto mb-3">
+                    <FiMessageSquare
+                      className="text-[#0F4C81] dark:text-[#5BA3D9]"
+                      size={24}
+                    />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                    {t("chat.title")}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-500">
+                    {t("chat.desc")}
+                  </p>
+                </div>
+
+                {/* Suggested questions */}
+                <div className="space-y-2">
+                  <p className="text-[10px] font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider px-1">
+                    {t("chat.suggested")}
+                  </p>
+                  {SUGGESTED_QUESTION_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => sendMessage(t(key))}
+                      disabled={isStreaming}
+                      className="w-full text-left px-3 py-2.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 hover:bg-[#0F4C81]/5 dark:hover:bg-[#5BA3D9]/10 hover:text-[#0F4C81] dark:hover:text-[#5BA3D9] rounded-sm border border-[#E5E0D8] dark:border-[#2D2D2D] hover:border-[#0F4C81]/20 dark:hover:border-[#5BA3D9]/20 transition-colors disabled:opacity-50"
+                    >
+                      {t(key)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-sm px-4 py-2.5 text-sm ${
+                    msg.role === "user"
+                      ? "bg-[#0F4C81] text-white"
+                      : "bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-100 dark:border-gray-700"
+                  }`}
+                >
+                  {msg.role === "assistant" ? (
+                    <ChatMarkdown text={msg.content} />
+                  ) : (
+                    <p className="whitespace-pre-wrap leading-relaxed">
+                      {msg.content}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {isStreaming &&
+              messages[messages.length - 1]?.content === "" && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-sm px-4 py-3 border border-gray-100 dark:border-gray-700">
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce" />
+                      <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce [animation-delay:0.15s]" />
+                      <span className="w-2 h-2 bg-[#5BA3D9] rounded-full animate-bounce [animation-delay:0.3s]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <form
+            onSubmit={handleSubmit}
+            className="p-3 border-t border-[#E5E0D8] dark:border-[#2D2D2D]"
+          >
+            <div className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={t("chat.placeholder")}
+                disabled={isStreaming}
+                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isStreaming}
+                className="p-2.5 bg-[#0F4C81] text-white rounded-sm hover:bg-[#0F4C81]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                <FiSend size={16} />
+              </button>
+            </div>
+          </form>
+        </>
+      )}
     </div>
   );
 }
