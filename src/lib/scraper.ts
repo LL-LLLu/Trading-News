@@ -8,10 +8,16 @@ const TRADINGVIEW_CALENDAR_URL =
   "https://economic-calendar.tradingview.com/events";
 
 function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  return (
+    text
+      .toLowerCase()
+      // Normalize common economic data abbreviations before slugifying
+      .replace(/\bm\/m\b/g, "mom")
+      .replace(/\by\/y\b/g, "yoy")
+      .replace(/\bq\/q\b/g, "qoq")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+  );
 }
 
 function categorizeEvent(name: string): EventCategory {
@@ -35,8 +41,7 @@ function categorizeEvent(name: string): EventCategory {
     lower.includes("pce")
   )
     return "INFLATION";
-  if (lower.includes("gdp") || lower.includes("gross domestic"))
-    return "GDP";
+  if (lower.includes("gdp") || lower.includes("gross domestic")) return "GDP";
   if (
     lower.includes("manufacturing") ||
     lower.includes("ism") ||
@@ -100,7 +105,7 @@ function categorizeEvent(name: string): EventCategory {
 
 function inferImportance(
   name: string,
-  impact?: string | number
+  impact?: string | number,
 ): "HIGH" | "MEDIUM" | "LOW" {
   // TradingView uses numeric importance: 0=holiday, 1=medium/high, 2=high, 3=very high
   if (typeof impact === "number") {
@@ -229,7 +234,7 @@ interface TradingViewEvent {
 
 export async function scrapeFromTradingView(
   fromDate: Date,
-  toDate: Date
+  toDate: Date,
 ): Promise<ScrapedEvent[]> {
   const from = fromDate.toISOString();
   const to = toDate.toISOString();
@@ -267,7 +272,10 @@ export async function scrapeFromTradingView(
     if (seen.has(dateKey)) continue;
     seen.add(dateKey);
 
-    const formatValue = (val: number | null, unit: string): string | undefined => {
+    const formatValue = (
+      val: number | null,
+      unit: string,
+    ): string | undefined => {
       if (val === null || val === undefined) return undefined;
       if (unit === "%") return `${val}%`;
       return String(val);
@@ -311,7 +319,7 @@ export async function scrapeEconomicCalendar(): Promise<ScrapedEvent[]> {
 
     const tvEvents = await scrapeFromTradingView(weekStart, futureEnd);
     console.log(
-      `[Scraper] TradingView: ${tvEvents.length} US events (${format(weekStart, "MMM d")} - ${format(futureEnd, "MMM d")})`
+      `[Scraper] TradingView: ${tvEvents.length} US events (${format(weekStart, "MMM d")} - ${format(futureEnd, "MMM d")})`,
     );
     for (const e of tvEvents) addEvent(e);
   } catch (err) {
@@ -322,7 +330,7 @@ export async function scrapeEconomicCalendar(): Promise<ScrapedEvent[]> {
   try {
     const ffEvents = await scrapeFromForexFactory();
     console.log(
-      `[Scraper] Forex Factory: ${ffEvents.length} USD events (current week)`
+      `[Scraper] Forex Factory: ${ffEvents.length} USD events (current week)`,
     );
     // FF events supplement TV data — add only if not already present
     for (const e of ffEvents) addEvent(e);
