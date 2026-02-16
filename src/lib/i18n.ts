@@ -31,7 +31,12 @@ export const translations = {
   "week.currentWeek": { en: "Current Week", zh: "本周" },
   "week.today": { en: "Today", zh: "今天" },
 
-  // ── Filters ──
+  // ── Search & Filters ──
+  "search.placeholder": { en: "Search events...", zh: "搜索事件..." },
+  "search.direction": { en: "Direction", zh: "方向" },
+  "search.bullish": { en: "BULLISH", zh: "看涨" },
+  "search.bearish": { en: "BEARISH", zh: "看跌" },
+  "search.neutral": { en: "NEUTRAL", zh: "中性" },
   "filter.all": { en: "ALL", zh: "全部" },
   "filter.high": { en: "HIGH", zh: "高" },
   "filter.medium": { en: "MEDIUM", zh: "中" },
