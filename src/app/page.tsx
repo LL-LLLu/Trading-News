@@ -6,7 +6,10 @@ import { QuickStats } from "@/components/dashboard/QuickStats";
 import { CountdownTimer } from "@/components/dashboard/CountdownTimer";
 import { WeekNavigator } from "@/components/dashboard/WeekNavigator";
 import { EventList } from "@/components/dashboard/EventList";
-import { QuickStatsSkeleton, EventCardSkeleton } from "@/components/ui/Skeleton";
+import {
+  QuickStatsSkeleton,
+  EventCardSkeleton,
+} from "@/components/ui/Skeleton";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 type EventData = {
@@ -58,7 +61,7 @@ export default function DashboardPage() {
   const highImpactEvents = events.filter((e) => e.importance === "HIGH");
   const now = new Date();
   const upcomingHighImpact = highImpactEvents.find(
-    (e) => new Date(e.dateTime) > now
+    (e) => new Date(e.dateTime) > now,
   );
 
   const analyzedEvents = events.filter((e) => e.analysis);
@@ -68,8 +71,7 @@ export default function DashboardPage() {
     let score = 0;
     for (const e of analyzedEvents) {
       if (!e.analysis) continue;
-      const weight =
-        importanceWeight[e.importance] * e.analysis.impactScore;
+      const weight = importanceWeight[e.importance] * e.analysis.impactScore;
       if (e.analysis.impactDirection === "BULLISH") score += weight;
       else if (e.analysis.impactDirection === "BEARISH") score -= weight;
     }
@@ -99,7 +101,13 @@ export default function DashboardPage() {
                     : "bg-white dark:bg-[#1A1A1A] text-[#6B7280] border border-[#E5E0D8] dark:border-[#2D2D2D] hover:bg-gray-50 dark:hover:bg-white/5"
                 }`}
               >
-                {t(`filter.${level.toLowerCase()}` as "filter.all" | "filter.high" | "filter.medium" | "filter.low")}
+                {t(
+                  `filter.${level.toLowerCase()}` as
+                    | "filter.all"
+                    | "filter.high"
+                    | "filter.medium"
+                    | "filter.low",
+                )}
               </button>
             ))}
           </div>
@@ -113,6 +121,7 @@ export default function DashboardPage() {
             highImpactCount={highImpactEvents.length}
             weekSentiment={weekSentiment}
             nextEvent={upcomingHighImpact || null}
+            currentWeek={currentWeek}
           />
         )}
 
