@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       prisma.economicEvent.findMany({
         where,
         include: includeAnalysis ? { analysis: true } : undefined,
-        orderBy: { dateTime: "desc" },
+        orderBy: { dateTime: "asc" },
         take: limit,
         skip: offset,
       }),
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     console.error("Events API error:", error);
     return NextResponse.json(
       { error: "Failed to fetch events", details: String(error) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
