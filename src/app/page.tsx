@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { startOfWeek, endOfWeek } from "date-fns";
 import { Header } from "@/components/layout/Header";
 import { QuickStats } from "@/components/dashboard/QuickStats";
 import { CountdownTimer } from "@/components/dashboard/CountdownTimer";
@@ -39,8 +40,12 @@ export default function DashboardPage() {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
+      // Compute week boundaries in local timezone to avoid UTC mismatch
+      const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
       const params = new URLSearchParams({
-        week: currentWeek.toISOString(),
+        from: weekStart.toISOString(),
+        to: weekEnd.toISOString(),
       });
       if (filter) params.set("importance", filter);
 
