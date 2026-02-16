@@ -7,21 +7,33 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-serif);
+  --color-wsj-cream: #FAF7F2;
+  --color-wsj-card: #FFFFFF;
+  --color-wsj-text: #1A1A1A;
+  --color-wsj-muted: #6B7280;
+  --color-wsj-border: #E5E0D8;
+  --color-wsj-navy: #0F4C81;
+  --color-wsj-navy-light: #5BA3D9;
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #FAF7F2;
+  --foreground: #1A1A1A;
 }
 
 .dark {
-  --background: #030712;
-  --foreground: #f1f5f9;
+  --background: #111111;
+  --foreground: #F5F5F4;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+.font-serif {
+  font-family: var(--font-serif), Georgia, serif;
 }
 
 ::-webkit-scrollbar {
@@ -34,12 +46,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #E5E0D8;
   border-radius: 3px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #2D2D2D;
 }
 
 .line-clamp-2 {

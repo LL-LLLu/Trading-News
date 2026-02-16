@@ -8,37 +8,39 @@ import {
   FiTrendingUp,
   FiClock,
   FiGrid,
-  FiMessageSquare,
   FiSettings,
 } from "react-icons/fi";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type { TranslationKey } from "@/lib/i18n";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: FiHome },
-  { href: "/calendar", label: "Calendar", icon: FiCalendar },
-  { href: "/outlook", label: "Outlook", icon: FiTrendingUp },
-  { href: "/history", label: "History", icon: FiClock },
-  { href: "/sectors", label: "Sectors", icon: FiGrid },
-  { href: "/settings", label: "Settings", icon: FiSettings },
+const navItems: { href: string; labelKey: TranslationKey; icon: typeof FiHome }[] = [
+  { href: "/", labelKey: "nav.dashboard", icon: FiHome },
+  { href: "/calendar", labelKey: "nav.calendar", icon: FiCalendar },
+  { href: "/outlook", labelKey: "nav.outlook", icon: FiTrendingUp },
+  { href: "/history", labelKey: "nav.history", icon: FiClock },
+  { href: "/sectors", labelKey: "nav.sectors", icon: FiGrid },
+  { href: "/settings", labelKey: "nav.settings", icon: FiSettings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { t } = useLanguage();
 
   return (
-    <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 h-screen sticky top-0">
+    <aside className="hidden md:flex flex-col w-64 bg-[#FAF7F2] dark:bg-[#111111] border-r border-[#E5E0D8] dark:border-[#2D2D2D] h-screen sticky top-0">
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800">
+      <div className="px-6 py-5 border-b border-[#E5E0D8] dark:border-[#2D2D2D]">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-[#0F4C81] rounded-sm flex items-center justify-center">
             <FiTrendingUp className="text-white" size={18} />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
-              Trading News
+            <h1 className="font-serif text-base font-bold text-[#1A1A1A] dark:text-[#F5F5F4] leading-tight tracking-wide">
+              {t("brand.title")}
             </h1>
-            <p className="text-[10px] text-gray-500 dark:text-gray-500 leading-tight">
-              Economic Calendar
+            <p className="text-[10px] text-[#6B7280] leading-tight">
+              {t("brand.subtitle")}
             </p>
           </div>
         </Link>
@@ -54,24 +56,24 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 hover:text-gray-900 dark:hover:text-gray-200"
+                  ? "border-l-2 border-[#0F4C81] text-[#0F4C81] dark:text-[#5BA3D9]"
+                  : "text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F4]"
               }`}
             >
               <item.icon size={18} />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}
       </nav>
 
       {/* Theme toggle */}
-      <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+      <div className="px-4 py-3 border-t border-[#E5E0D8] dark:border-[#2D2D2D]">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500 dark:text-gray-500">
-            Theme
+          <span className="text-xs text-[#6B7280]">
+            {t("sidebar.theme")}
           </span>
           <ThemeToggle />
         </div>

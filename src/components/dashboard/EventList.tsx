@@ -1,7 +1,9 @@
 "use client";
 
 import { format, isSameDay } from "date-fns";
+import { zhCN } from "date-fns/locale";
 import { EventCard } from "./EventCard";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type EventData = {
   id: string;
@@ -26,11 +28,14 @@ interface EventListProps {
 }
 
 export function EventList({ events, groupByDay = true }: EventListProps) {
+  const { t, language } = useLanguage();
+  const dateFnsLocale = language === "zh" ? zhCN : undefined;
+
   if (events.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 dark:text-gray-500 text-sm">
-          No events found for this period.
+          {t("list.noEvents")}
         </p>
       </div>
     );
@@ -63,12 +68,12 @@ export function EventList({ events, groupByDay = true }: EventListProps) {
       {grouped.map((group) => (
         <div key={group.date.toISOString()}>
           <div className="flex items-center gap-3 mb-3">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-              {format(group.date, "EEEE, MMMM d")}
+            <h3 className="font-serif text-sm font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+              {format(group.date, "EEEE, MMMM d", { locale: dateFnsLocale })}
             </h3>
-            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+            <div className="flex-1 border-b-2 border-[#E5E0D8] dark:border-[#2D2D2D]" />
             <span className="text-xs text-gray-500 dark:text-gray-500">
-              {group.events.length} event{group.events.length !== 1 ? "s" : ""}
+              {group.events.length} {group.events.length !== 1 ? t("list.events") : t("list.event")}
             </span>
           </div>
           <div className="space-y-3">

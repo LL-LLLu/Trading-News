@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   startOfWeek,
@@ -266,6 +266,185 @@ function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+// PATCH: Clear web forecasts so they can be regenerated with updated prompts
+export async function PATCH(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const result = await prisma.eventAnalysis.updateMany({
+    where: { webForecast: { not: null } },
+    data: { webForecast: null, webSources: undefined },
+  });
+
+  return NextResponse.json({
+    message: "Web forecasts cleared for regeneration",
+    cleared: result.count,
+  });
+}
+
+// DELETE: Clean up seed data after a given date
+export async function DELETE(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const after = request.nextUrl.searchParams.get("after");
+  if (!after) {
+    return NextResponse.json({ error: "Missing ?after= param" }, { status: 400 });
+  }
+
+  const afterDate = new Date(after);
+
+  // Delete analyses first (cascade), then events
+  const events = await prisma.economicEvent.findMany({
+    where: {
+      dateTime: { gte: afterDate },
+      sourceUrl: { contains: "marketwatch" },
+    },
+    select: { id: true },
+  });
+
+  if (events.length === 0) {
+    return NextResponse.json({ message: "No seed events to delete", count: 0 });
+  }
+
+  const ids = events.map((e) => e.id);
+
+  // Delete related analyses first
+  await prisma.eventAnalysis.deleteMany({
+    where: { eventId: { in: ids } },
+  });
+
+  // Delete events
+  const deleted = await prisma.economicEvent.deleteMany({
+    where: { id: { in: ids } },
+  });
+
+  return NextResponse.json({
+    message: "Seed data cleaned",
+    deleted: deleted.count,
+  });
+}
+
+// POST: Seed sample weekly outlook data
+export async function POST(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+    const outlook = await prisma.weeklyOutlook.upsert({
+      where: { weekStart },
+      update: {
+        overallSentiment: "BULLISH",
+        executiveSummary: `This week's economic calendar is dominated by inflation data and labor market indicators that will shape Fed policy expectations heading into March. The January CPI report surprised to the upside at 0.5% MoM, reigniting concerns about sticky inflation. However, the labor market showed signs of cooling with ADP employment coming in well below expectations at 77K vs 140K forecast.\n\nMarkets are recalibrating rate cut expectations, now pricing in only two cuts for 2025 versus three previously. The combination of resilient economic growth (Q4 GDP at 2.3%) and persistent inflation creates a complex backdrop for risk assets. Watch for the PCE Price Index on Friday as the Fed's preferred inflation gauge.`,
+        keyEvents: [
+          { eventName: "Consumer Price Index (CPI) MoM", impactScore: 9, reasoning: "January CPI came in hot at 0.5% MoM vs 0.3% expected, the largest monthly increase since August 2023. Core CPI also exceeded expectations. This reading challenges the disinflation narrative and could delay Fed rate cuts." },
+          { eventName: "Nonfarm Payrolls", impactScore: 9, reasoning: "The flagship employment report will reveal whether the labor market is truly cooling or if January's ADP miss was an outlier. Consensus expects 160K jobs added, but any significant beat could further reduce rate cut expectations." },
+          { eventName: "FOMC Interest Rate Decision", impactScore: 8, reasoning: "The Fed held rates steady at 4.50% as expected, but the statement language shifted hawkish, removing references to 'progress on inflation.' Markets now see June as the earliest possible cut date." },
+          { eventName: "Retail Sales MoM", impactScore: 7, reasoning: "January retail sales plunged -0.9%, the largest decline in nearly two years. This could signal consumer fatigue despite a strong labor market, with implications for Q1 GDP tracking." },
+          { eventName: "PCE Price Index MoM", impactScore: 8, reasoning: "As the Fed's preferred inflation measure, January PCE will be scrutinized for confirmation of the CPI upside surprise. A hot reading could cement the 'higher for longer' narrative." },
+          { eventName: "ISM Manufacturing PMI", impactScore: 6, reasoning: "Manufacturing returned to expansion territory at 50.9 in January, the first expansion in 26 months. Continued expansion would signal a broadening recovery beyond the services sector." },
+        ],
+        themeAnalysis: [
+          { theme: "Inflation Resurgence", description: "January CPI surprised to the upside, challenging the smooth disinflation path markets had priced in. Shelter costs remain elevated and services inflation is sticky, keeping the Fed cautious about premature easing.", implications: "Rate cut timeline pushed back; bond yields likely to remain elevated; growth stocks face headwinds from higher discount rates." },
+          { theme: "Consumer Spending Slowdown", description: "Retail sales dropped sharply in January while consumer confidence fell to its lowest level in 8 months. The savings rate buffer built during the pandemic continues to erode, especially for lower-income households.", implications: "Defensive consumer staples may outperform discretionary; retailers with pricing power favored; potential drag on Q1 GDP estimates." },
+          { theme: "Manufacturing Renaissance", description: "ISM Manufacturing PMI crossed back above 50 for the first time since late 2022, driven by new orders and production gains. Reshoring trends and infrastructure spending are providing tailwinds.", implications: "Industrial and materials sectors benefit; capital goods companies see order growth; positive for cyclical rotation." },
+          { theme: "Labor Market Rebalancing", description: "Mixed signals from the labor market — strong headline payrolls but cooling ADP numbers and rising initial claims suggest the rebalancing the Fed wants is underway, just unevenly.", implications: "Wage growth moderation supports margins; unemployment staying low supports consumer spending floor; gradual normalization is goldilocks scenario." },
+        ],
+        riskAssessment: [
+          { risk: "Inflation Re-acceleration", probability: "HIGH" as const, impact: "If February CPI confirms January's hot reading, markets could reprice to zero cuts in 2025, triggering a significant equity selloff and USD strength." },
+          { risk: "Tariff Escalation", probability: "HIGH" as const, impact: "New tariff announcements on Chinese goods could disrupt supply chains, add to inflationary pressures, and weigh on multinational earnings. Import prices already showing upward pressure." },
+          { risk: "Credit Market Stress", probability: "MEDIUM" as const, impact: "Commercial real estate refinancing wave in Q1-Q2 could expose regional bank vulnerabilities. Spreads have widened modestly but remain below stress levels." },
+          { risk: "Geopolitical Disruption", probability: "MEDIUM" as const, impact: "Ongoing Middle East tensions threaten oil supply routes. A sustained move above $85/bbl in WTI would add 20-30bps to headline inflation expectations." },
+          { risk: "Consumer Credit Deterioration", probability: "LOW" as const, impact: "Credit card delinquencies rising to post-GFC highs among subprime borrowers. While contained for now, a labor market shock could trigger broader credit stress." },
+        ],
+        sectorRotation: [
+          { sector: "Technology", outlook: "OVERWEIGHT" as const, reasoning: "AI infrastructure spending remains robust. Cloud hyperscaler capex guidance beat expectations. Valuations stretched but earnings delivery justifies premium." },
+          { sector: "Energy", outlook: "OVERWEIGHT" as const, reasoning: "Geopolitical premium supports oil prices. Strong free cash flow generation and shareholder returns. Natural gas recovery from weather-driven demand." },
+          { sector: "Healthcare", outlook: "OVERWEIGHT" as const, reasoning: "Defensive positioning attractive amid uncertainty. GLP-1 drug pipeline expanding. Managed care valuations attractive after recent pullback." },
+          { sector: "Financials", outlook: "NEUTRAL" as const, reasoning: "Higher-for-longer rates support NIM but loan growth tepid. Investment banking recovery underway but CRE exposure a concern." },
+          { sector: "Industrials", outlook: "NEUTRAL" as const, reasoning: "Infrastructure spending tailwind offset by tariff uncertainty. Order books solid but margin pressure from input costs." },
+          { sector: "Consumer Staples", outlook: "NEUTRAL" as const, reasoning: "Volume growth challenging as consumers trade down. Pricing power waning. Dividend yields attractive but growth limited." },
+          { sector: "Materials", outlook: "NEUTRAL" as const, reasoning: "China stimulus hopes support base metals. Gold benefiting from central bank buying. Chemical margins recovering from 2024 trough." },
+          { sector: "Real Estate", outlook: "UNDERWEIGHT" as const, reasoning: "Higher rates pressure valuations and refinancing costs. Office vacancy remains elevated. Residential REITs better positioned than commercial." },
+          { sector: "Utilities", outlook: "UNDERWEIGHT" as const, reasoning: "Rate-sensitive sector faces headwinds from higher Treasury yields. AI data center power demand is a long-term positive but near-term drag from rising capital costs." },
+          { sector: "Consumer Discretionary", outlook: "UNDERWEIGHT" as const, reasoning: "Retail sales decline signals consumer fatigue. Auto sales slowing. Student loan repayments and higher credit costs weighing on spending power." },
+        ],
+      },
+      create: {
+        weekStart,
+        weekEnd,
+        overallSentiment: "BULLISH",
+        executiveSummary: `This week's economic calendar is dominated by inflation data and labor market indicators that will shape Fed policy expectations heading into March. The January CPI report surprised to the upside at 0.5% MoM, reigniting concerns about sticky inflation. However, the labor market showed signs of cooling with ADP employment coming in well below expectations at 77K vs 140K forecast.\n\nMarkets are recalibrating rate cut expectations, now pricing in only two cuts for 2025 versus three previously. The combination of resilient economic growth (Q4 GDP at 2.3%) and persistent inflation creates a complex backdrop for risk assets. Watch for the PCE Price Index on Friday as the Fed's preferred inflation gauge.`,
+        keyEvents: [
+          { eventName: "Consumer Price Index (CPI) MoM", impactScore: 9, reasoning: "January CPI came in hot at 0.5% MoM vs 0.3% expected, the largest monthly increase since August 2023. Core CPI also exceeded expectations. This reading challenges the disinflation narrative and could delay Fed rate cuts." },
+          { eventName: "Nonfarm Payrolls", impactScore: 9, reasoning: "The flagship employment report will reveal whether the labor market is truly cooling or if January's ADP miss was an outlier. Consensus expects 160K jobs added, but any significant beat could further reduce rate cut expectations." },
+          { eventName: "FOMC Interest Rate Decision", impactScore: 8, reasoning: "The Fed held rates steady at 4.50% as expected, but the statement language shifted hawkish, removing references to 'progress on inflation.' Markets now see June as the earliest possible cut date." },
+          { eventName: "Retail Sales MoM", impactScore: 7, reasoning: "January retail sales plunged -0.9%, the largest decline in nearly two years. This could signal consumer fatigue despite a strong labor market, with implications for Q1 GDP tracking." },
+          { eventName: "PCE Price Index MoM", impactScore: 8, reasoning: "As the Fed's preferred inflation measure, January PCE will be scrutinized for confirmation of the CPI upside surprise. A hot reading could cement the 'higher for longer' narrative." },
+          { eventName: "ISM Manufacturing PMI", impactScore: 6, reasoning: "Manufacturing returned to expansion territory at 50.9 in January, the first expansion in 26 months. Continued expansion would signal a broadening recovery beyond the services sector." },
+        ],
+        themeAnalysis: [
+          { theme: "Inflation Resurgence", description: "January CPI surprised to the upside, challenging the smooth disinflation path markets had priced in. Shelter costs remain elevated and services inflation is sticky, keeping the Fed cautious about premature easing.", implications: "Rate cut timeline pushed back; bond yields likely to remain elevated; growth stocks face headwinds from higher discount rates." },
+          { theme: "Consumer Spending Slowdown", description: "Retail sales dropped sharply in January while consumer confidence fell to its lowest level in 8 months. The savings rate buffer built during the pandemic continues to erode, especially for lower-income households.", implications: "Defensive consumer staples may outperform discretionary; retailers with pricing power favored; potential drag on Q1 GDP estimates." },
+          { theme: "Manufacturing Renaissance", description: "ISM Manufacturing PMI crossed back above 50 for the first time since late 2022, driven by new orders and production gains. Reshoring trends and infrastructure spending are providing tailwinds.", implications: "Industrial and materials sectors benefit; capital goods companies see order growth; positive for cyclical rotation." },
+          { theme: "Labor Market Rebalancing", description: "Mixed signals from the labor market — strong headline payrolls but cooling ADP numbers and rising initial claims suggest the rebalancing the Fed wants is underway, just unevenly.", implications: "Wage growth moderation supports margins; unemployment staying low supports consumer spending floor; gradual normalization is goldilocks scenario." },
+        ],
+        riskAssessment: [
+          { risk: "Inflation Re-acceleration", probability: "HIGH" as const, impact: "If February CPI confirms January's hot reading, markets could reprice to zero cuts in 2025, triggering a significant equity selloff and USD strength." },
+          { risk: "Tariff Escalation", probability: "HIGH" as const, impact: "New tariff announcements on Chinese goods could disrupt supply chains, add to inflationary pressures, and weigh on multinational earnings. Import prices already showing upward pressure." },
+          { risk: "Credit Market Stress", probability: "MEDIUM" as const, impact: "Commercial real estate refinancing wave in Q1-Q2 could expose regional bank vulnerabilities. Spreads have widened modestly but remain below stress levels." },
+          { risk: "Geopolitical Disruption", probability: "MEDIUM" as const, impact: "Ongoing Middle East tensions threaten oil supply routes. A sustained move above $85/bbl in WTI would add 20-30bps to headline inflation expectations." },
+          { risk: "Consumer Credit Deterioration", probability: "LOW" as const, impact: "Credit card delinquencies rising to post-GFC highs among subprime borrowers. While contained for now, a labor market shock could trigger broader credit stress." },
+        ],
+        sectorRotation: [
+          { sector: "Technology", outlook: "OVERWEIGHT" as const, reasoning: "AI infrastructure spending remains robust. Cloud hyperscaler capex guidance beat expectations. Valuations stretched but earnings delivery justifies premium." },
+          { sector: "Energy", outlook: "OVERWEIGHT" as const, reasoning: "Geopolitical premium supports oil prices. Strong free cash flow generation and shareholder returns. Natural gas recovery from weather-driven demand." },
+          { sector: "Healthcare", outlook: "OVERWEIGHT" as const, reasoning: "Defensive positioning attractive amid uncertainty. GLP-1 drug pipeline expanding. Managed care valuations attractive after recent pullback." },
+          { sector: "Financials", outlook: "NEUTRAL" as const, reasoning: "Higher-for-longer rates support NIM but loan growth tepid. Investment banking recovery underway but CRE exposure a concern." },
+          { sector: "Industrials", outlook: "NEUTRAL" as const, reasoning: "Infrastructure spending tailwind offset by tariff uncertainty. Order books solid but margin pressure from input costs." },
+          { sector: "Consumer Staples", outlook: "NEUTRAL" as const, reasoning: "Volume growth challenging as consumers trade down. Pricing power waning. Dividend yields attractive but growth limited." },
+          { sector: "Materials", outlook: "NEUTRAL" as const, reasoning: "China stimulus hopes support base metals. Gold benefiting from central bank buying. Chemical margins recovering from 2024 trough." },
+          { sector: "Real Estate", outlook: "UNDERWEIGHT" as const, reasoning: "Higher rates pressure valuations and refinancing costs. Office vacancy remains elevated. Residential REITs better positioned than commercial." },
+          { sector: "Utilities", outlook: "UNDERWEIGHT" as const, reasoning: "Rate-sensitive sector faces headwinds from higher Treasury yields. AI data center power demand is a long-term positive but near-term drag from rising capital costs." },
+          { sector: "Consumer Discretionary", outlook: "UNDERWEIGHT" as const, reasoning: "Retail sales decline signals consumer fatigue. Auto sales slowing. Student loan repayments and higher credit costs weighing on spending power." },
+        ],
+      },
+    });
+
+    return NextResponse.json({
+      message: "Weekly outlook seeded",
+      id: outlook.id,
+      weekStart: outlook.weekStart.toISOString(),
+      weekEnd: outlook.weekEnd.toISOString(),
+    });
+  } catch (error) {
+    console.error("Outlook seed failed:", error);
+    return NextResponse.json(
+      { error: "Seed failed", details: String(error) },
+      { status: 500 }
+    );
+  }
 }
 
 export async function GET() {

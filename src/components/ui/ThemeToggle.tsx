@@ -9,7 +9,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400"
+      className="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400"
       aria-label="Toggle theme"
     >
       {theme === "dark" ? <FiSun size={18} /> : <FiMoon size={18} />}

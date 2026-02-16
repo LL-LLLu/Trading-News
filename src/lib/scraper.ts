@@ -1,13 +1,19 @@
-import * as cheerio from "cheerio";
 import { ScrapedEvent, EventCategory } from "@/types/events";
-import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
+import {
+  addMonths,
+  startOfMonth,
+  getDay,
+  addDays,
+  setHours,
+  setMinutes,
+  isAfter,
+  endOfWeek,
+  startOfWeek,
+  isBefore,
+} from "date-fns";
 
-const FINNHUB_BASE = "https://finnhub.io/api/v1";
-const MARKETWATCH_URL =
-  "https://www.marketwatch.com/economy-politics/calendar";
-
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const FOREX_FACTORY_URL =
+  "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
 function slugify(text: string): string {
   return text
@@ -103,10 +109,12 @@ function inferImportance(
   name: string,
   impact?: string
 ): "HIGH" | "MEDIUM" | "LOW" {
-  // Use Finnhub impact field if available
-  if (impact === "high") return "HIGH";
-  if (impact === "medium") return "MEDIUM";
-  if (impact === "low") return "LOW";
+  if (impact) {
+    const lower = impact.toLowerCase();
+    if (lower === "high") return "HIGH";
+    if (lower === "medium") return "MEDIUM";
+    if (lower === "low") return "LOW";
+  }
 
   const lower = name.toLowerCase();
   const highImpact = [
@@ -152,222 +160,411 @@ function inferImportance(
   return "LOW";
 }
 
-// Primary: Finnhub API (reliable, free tier)
-export async function scrapeFromFinnhub(
-  apiKey: string
-): Promise<ScrapedEvent[]> {
-  const now = new Date();
-  const from = format(
-    startOfWeek(now, { weekStartsOn: 1 }),
-    "yyyy-MM-dd"
-  );
-  const to = format(
-    addDays(endOfWeek(now, { weekStartsOn: 1 }), 7),
-    "yyyy-MM-dd"
-  );
+// ── Forex Factory (current week, real data) ─────────────────────────
 
-  const url = `${FINNHUB_BASE}/calendar/economic?from=${from}&to=${to}&token=${apiKey}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Finnhub API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const calendar = data.economicCalendar || [];
-
-  return calendar
-    .filter(
-      (e: { country?: string }) =>
-        e.country === "US" || e.country === "United States"
-    )
-    .map(
-      (e: {
-        event: string;
-        time: string;
-        actual?: number;
-        estimate?: number;
-        prev?: number;
-        impact?: string;
-        unit?: string;
-        country?: string;
-      }) => {
-        const dateTime = new Date(e.time);
-        const eventName = e.event || "Unknown Event";
-
-        return {
-          eventName,
-          eventSlug: slugify(eventName),
-          dateTime,
-          actual:
-            e.actual !== null && e.actual !== undefined
-              ? String(e.actual)
-              : undefined,
-          forecast:
-            e.estimate !== null && e.estimate !== undefined
-              ? String(e.estimate)
-              : undefined,
-          previous:
-            e.prev !== null && e.prev !== undefined
-              ? String(e.prev)
-              : undefined,
-          unit: e.unit || undefined,
-          importance: inferImportance(eventName, e.impact),
-          category: categorizeEvent(eventName),
-          sourceUrl: "https://finnhub.io",
-        } satisfies ScrapedEvent;
-      }
-    );
-}
-
-// Fallback: MarketWatch HTML scraping
-export async function scrapeMarketWatch(): Promise<ScrapedEvent[]> {
-  const response = await fetch(MARKETWATCH_URL, {
+export async function scrapeFromForexFactory(): Promise<ScrapedEvent[]> {
+  const response = await fetch(FOREX_FACTORY_URL, {
     headers: {
-      "User-Agent": USER_AGENT,
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Cache-Control": "no-cache",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      Accept: "application/json, text/plain, */*",
     },
   });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
     throw new Error(
-      `MarketWatch fetch failed: ${response.status} ${response.statusText}`
+      `Forex Factory fetch failed: ${response.status} ${response.statusText}${body.includes("Rate Limited") ? " (rate limited)" : ""}`
     );
   }
 
-  const html = await response.text();
-  return parseMarketWatchHTML(html);
-}
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("json")) {
+    throw new Error(
+      `Forex Factory returned non-JSON response: ${contentType}`
+    );
+  }
 
-export function parseMarketWatchHTML(html: string): ScrapedEvent[] {
-  const $ = cheerio.load(html);
-  const events: ScrapedEvent[] = [];
-  let currentDate = "";
+  const data: Array<{
+    title: string;
+    country: string;
+    date: string;
+    impact: string;
+    forecast: string;
+    previous: string;
+  }> = await response.json();
 
-  // Try multiple possible table selectors
-  const tableSelectors = [
-    "table.table--economic-calendar tr",
-    "table.calendar tr",
-    ".economic-calendar table tr",
-    "table tr",
-  ];
-
-  for (const selector of tableSelectors) {
-    const rows = $(selector);
-    if (rows.length === 0) continue;
-
-    rows.each((_, row) => {
-      const $row = $(row);
-      const tds = $row.find("td");
-      const ths = $row.find("th");
-
-      // Date header row
-      if (ths.length > 0 || (tds.length <= 2 && tds.length > 0)) {
-        const text = (ths.text() || tds.text()).trim();
-        if (text.match(/(Mon|Tue|Wed|Thu|Fri|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i)) {
-          currentDate = text;
-          return;
-        }
-      }
-
-      if (tds.length < 3) return;
-
-      const time = tds.eq(0).text().trim();
-      const eventName = tds.eq(1).text().trim();
-      if (!eventName || eventName.length < 3) return;
-
-      const period = tds.eq(2).text().trim();
-      const actual = tds.eq(3).text().trim();
-      const forecast = tds.eq(4).text().trim();
-      const previous = tds.eq(5).text().trim();
-
-      const dateTime = currentDate
-        ? parseDateTime(currentDate, time)
-        : new Date();
-
-      events.push({
+  return data
+    .filter((e) => e.country === "USD")
+    .map((e) => {
+      const eventName = e.title || "Unknown Event";
+      const dateTime = new Date(e.date);
+      return {
         eventName,
         eventSlug: slugify(eventName),
         dateTime,
-        period: period && period !== "--" ? period : undefined,
-        actual: actual && actual !== "--" ? actual : undefined,
-        forecast: forecast && forecast !== "--" ? forecast : undefined,
-        previous: previous && previous !== "--" ? previous : undefined,
-        importance: inferImportance(eventName),
+        actual: undefined,
+        forecast:
+          e.forecast && e.forecast.trim() ? e.forecast.trim() : undefined,
+        previous:
+          e.previous && e.previous.trim() ? e.previous.trim() : undefined,
+        importance: inferImportance(eventName, e.impact),
         category: categorizeEvent(eventName),
-        sourceUrl: MARKETWATCH_URL,
-      });
+        sourceUrl: "https://www.forexfactory.com/calendar",
+      } satisfies ScrapedEvent;
     });
+}
 
-    if (events.length > 0) break;
+// ── Forward Calendar Generator ──────────────────────────────────────
+// Major US economic events follow known schedules. This generates
+// placeholder events for the next several weeks so the dashboard
+// always shows upcoming releases. Real data from Forex Factory
+// overwrites these as each week arrives.
+
+type DateRule =
+  | { type: "nthWeekday"; n: number; weekday: number } // nth occurrence of weekday in month (0=Sun..6=Sat)
+  | { type: "dayOfMonth"; day: number } // specific day (adjusted to nearest weekday)
+  | { type: "lastWeekday"; weekday: number } // last occurrence of weekday in month
+  | { type: "weekly"; weekday: number }; // every week on this day
+
+interface ScheduledEvent {
+  name: string;
+  category: EventCategory;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+  hour: number; // ET hour (24h)
+  minute: number;
+  rule: DateRule;
+}
+
+const KNOWN_SCHEDULE: ScheduledEvent[] = [
+  // ── HIGH IMPACT ──
+  {
+    name: "Nonfarm Payrolls",
+    category: "EMPLOYMENT",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "nthWeekday", n: 1, weekday: 5 }, // 1st Friday
+  },
+  {
+    name: "Unemployment Rate",
+    category: "EMPLOYMENT",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "nthWeekday", n: 1, weekday: 5 }, // 1st Friday (same day as NFP)
+  },
+  {
+    name: "CPI m/m",
+    category: "INFLATION",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 12 },
+  },
+  {
+    name: "Core CPI m/m",
+    category: "INFLATION",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 12 },
+  },
+  {
+    name: "PPI m/m",
+    category: "INFLATION",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 13 },
+  },
+  {
+    name: "Retail Sales m/m",
+    category: "CONSUMER",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 15 },
+  },
+  {
+    name: "PCE Price Index m/m",
+    category: "INFLATION",
+    importance: "HIGH",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 28 },
+  },
+  {
+    name: "ISM Manufacturing PMI",
+    category: "MANUFACTURING",
+    importance: "HIGH",
+    hour: 10,
+    minute: 0,
+    rule: { type: "nthWeekday", n: 1, weekday: 1 }, // 1st business day ≈ 1st Monday
+  },
+  {
+    name: "ISM Services PMI",
+    category: "MANUFACTURING",
+    importance: "HIGH",
+    hour: 10,
+    minute: 0,
+    rule: { type: "nthWeekday", n: 1, weekday: 3 }, // ~3rd business day ≈ 1st Wednesday
+  },
+  {
+    name: "JOLTS Job Openings",
+    category: "EMPLOYMENT",
+    importance: "HIGH",
+    hour: 10,
+    minute: 0,
+    rule: { type: "nthWeekday", n: 1, weekday: 2 }, // ~1st Tuesday
+  },
+  // ── MEDIUM IMPACT ──
+  {
+    name: "ADP Non-Farm Employment Change",
+    category: "EMPLOYMENT",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 15,
+    rule: { type: "nthWeekday", n: 1, weekday: 3 }, // 1st Wednesday (2 days before NFP)
+  },
+  {
+    name: "Initial Jobless Claims",
+    category: "EMPLOYMENT",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 30,
+    rule: { type: "weekly", weekday: 4 }, // every Thursday
+  },
+  {
+    name: "Consumer Confidence",
+    category: "CONSUMER",
+    importance: "MEDIUM",
+    hour: 10,
+    minute: 0,
+    rule: { type: "lastWeekday", weekday: 2 }, // last Tuesday
+  },
+  {
+    name: "Michigan Consumer Sentiment",
+    category: "CONSUMER",
+    importance: "MEDIUM",
+    hour: 10,
+    minute: 0,
+    rule: { type: "nthWeekday", n: 2, weekday: 5 }, // preliminary: 2nd Friday
+  },
+  {
+    name: "Existing Home Sales",
+    category: "HOUSING",
+    importance: "MEDIUM",
+    hour: 10,
+    minute: 0,
+    rule: { type: "dayOfMonth", day: 21 },
+  },
+  {
+    name: "New Home Sales",
+    category: "HOUSING",
+    importance: "MEDIUM",
+    hour: 10,
+    minute: 0,
+    rule: { type: "dayOfMonth", day: 25 },
+  },
+  {
+    name: "Durable Goods Orders m/m",
+    category: "MANUFACTURING",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 27 },
+  },
+  {
+    name: "Housing Starts",
+    category: "HOUSING",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 17 },
+  },
+  {
+    name: "Building Permits",
+    category: "HOUSING",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 17 },
+  },
+  {
+    name: "Trade Balance",
+    category: "TRADE",
+    importance: "MEDIUM",
+    hour: 8,
+    minute: 30,
+    rule: { type: "dayOfMonth", day: 5 },
+  },
+  {
+    name: "Industrial Production m/m",
+    category: "MANUFACTURING",
+    importance: "MEDIUM",
+    hour: 9,
+    minute: 15,
+    rule: { type: "dayOfMonth", day: 16 },
+  },
+];
+
+// Helper: get the nth occurrence of a weekday in a month
+function getNthWeekday(year: number, month: number, weekday: number, n: number): Date {
+  const first = startOfMonth(new Date(year, month));
+  const firstDay = getDay(first);
+  let offset = weekday - firstDay;
+  if (offset < 0) offset += 7;
+  return addDays(first, offset + (n - 1) * 7);
+}
+
+// Helper: get the last occurrence of a weekday in a month
+function getLastWeekday(year: number, month: number, weekday: number): Date {
+  const nextMonth = startOfMonth(addMonths(new Date(year, month), 1));
+  let d = addDays(nextMonth, -1); // last day of month
+  while (getDay(d) !== weekday) {
+    d = addDays(d, -1);
+  }
+  return d;
+}
+
+// Helper: get a specific day of month, adjusted to nearest weekday
+function getDayOfMonth(year: number, month: number, day: number): Date {
+  const lastDay = addDays(startOfMonth(addMonths(new Date(year, month), 1)), -1).getDate();
+  const actualDay = Math.min(day, lastDay);
+  let d = new Date(year, month, actualDay);
+  const dow = getDay(d);
+  if (dow === 0) d = addDays(d, 1); // Sunday → Monday
+  if (dow === 6) d = addDays(d, -1); // Saturday → Friday
+  return d;
+}
+
+function resolveDate(
+  rule: DateRule,
+  year: number,
+  month: number,
+  weekInMonth?: number
+): Date | null {
+  switch (rule.type) {
+    case "nthWeekday":
+      return getNthWeekday(year, month, rule.weekday, rule.n);
+    case "lastWeekday":
+      return getLastWeekday(year, month, rule.weekday);
+    case "dayOfMonth":
+      return getDayOfMonth(year, month, rule.day);
+    case "weekly":
+      // Returns the occurrence within the given week (weekInMonth param used externally)
+      return null; // handled separately
+  }
+}
+
+export function generateForwardCalendar(
+  weeksAhead: number = 8
+): ScrapedEvent[] {
+  const now = new Date();
+  const cutoffStart = startOfWeek(addDays(now, 7), { weekStartsOn: 1 }); // start of next week
+  const cutoffEnd = endOfWeek(addDays(now, weeksAhead * 7), { weekStartsOn: 1 });
+  const events: ScrapedEvent[] = [];
+  const seen = new Set<string>();
+
+  // Generate for each month that overlaps our range
+  const startMonth = new Date(cutoffStart.getFullYear(), cutoffStart.getMonth());
+  const endMonth = addMonths(new Date(cutoffEnd.getFullYear(), cutoffEnd.getMonth()), 1);
+
+  let current = startMonth;
+  while (isBefore(current, endMonth)) {
+    const year = current.getFullYear();
+    const month = current.getMonth();
+
+    for (const evt of KNOWN_SCHEDULE) {
+      if (evt.rule.type === "weekly") {
+        // Generate for each week in the range
+        let weekStart = startOfWeek(
+          new Date(year, month, 1),
+          { weekStartsOn: 1 }
+        );
+        for (let w = 0; w < 6; w++) {
+          let d = addDays(weekStart, evt.rule.weekday - 1); // weekday: 1=Mon...5=Fri
+          // Adjust: date-fns weekday 4=Thu, but our rule uses 4=Thu too (0=Sun convention)
+          d = addDays(weekStart, ((evt.rule.weekday - 1 + 7) % 7));
+          if (getDay(d) !== evt.rule.weekday) {
+            // recalculate
+            const off = (evt.rule.weekday - getDay(weekStart) + 7) % 7;
+            d = addDays(weekStart, off);
+          }
+          d = setHours(setMinutes(d, evt.minute), evt.hour + 5); // ET → UTC (+5)
+          if (isAfter(d, cutoffStart) && isBefore(d, cutoffEnd)) {
+            const key = `${evt.name}|${d.toISOString().slice(0, 10)}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              events.push({
+                eventName: evt.name,
+                eventSlug: slugify(evt.name),
+                dateTime: d,
+                importance: evt.importance,
+                category: evt.category,
+                sourceUrl: "https://www.forexfactory.com/calendar",
+              });
+            }
+          }
+          weekStart = addDays(weekStart, 7);
+        }
+        continue;
+      }
+
+      const d = resolveDate(evt.rule, year, month);
+      if (!d) continue;
+
+      const withTime = setHours(setMinutes(d, evt.minute), evt.hour + 5); // ET → UTC (+5)
+
+      if (isAfter(withTime, cutoffStart) && isBefore(withTime, cutoffEnd)) {
+        const key = `${evt.name}|${withTime.toISOString().slice(0, 10)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          events.push({
+            eventName: evt.name,
+            eventSlug: slugify(evt.name),
+            dateTime: withTime,
+            importance: evt.importance,
+            category: evt.category,
+            sourceUrl: "https://www.forexfactory.com/calendar",
+          });
+        }
+      }
+    }
+
+    current = addMonths(current, 1);
   }
 
   return events;
 }
 
-function parseDateTime(dateStr: string, timeStr: string): Date {
-  const cleanDate = dateStr.replace(/\./g, "").trim();
-  const dateParsed = new Date(cleanDate);
+// ── Main scrape function ────────────────────────────────────────────
 
-  if (isNaN(dateParsed.getTime())) {
-    const currentYear = new Date().getFullYear();
-    const withYear = `${cleanDate} ${currentYear}`;
-    const fallback = new Date(withYear);
-    if (!isNaN(fallback.getTime())) {
-      return applyTime(fallback, timeStr);
-    }
-    return new Date();
-  }
-
-  return applyTime(dateParsed, timeStr);
-}
-
-function applyTime(date: Date, timeStr: string): Date {
-  if (!timeStr || timeStr.trim() === "") return date;
-
-  const clean = timeStr.toLowerCase().replace(/\./g, "").trim();
-  const match = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/);
-  if (match) {
-    let hours = parseInt(match[1]);
-    const minutes = match[2] ? parseInt(match[2]) : 0;
-    const period = match[3];
-    if (period === "pm" && hours !== 12) hours += 12;
-    if (period === "am" && hours === 12) hours = 0;
-    date.setHours(hours, minutes, 0, 0);
-  }
-  return date;
-}
-
-// Main scrape function - tries Finnhub first, falls back to MarketWatch
 export async function scrapeEconomicCalendar(): Promise<ScrapedEvent[]> {
-  const finnhubKey = process.env.FINNHUB_API_KEY;
+  const allEvents: ScrapedEvent[] = [];
 
-  // Try Finnhub first
-  if (finnhubKey) {
-    try {
-      const events = await scrapeFromFinnhub(finnhubKey);
-      if (events.length > 0) {
-        console.log(`Scraped ${events.length} events from Finnhub`);
-        return events;
-      }
-    } catch (err) {
-      console.error("Finnhub scrape failed, trying MarketWatch:", err);
-    }
-  }
-
-  // Fallback to MarketWatch
+  // 1. Fetch current week from Forex Factory (real data with forecasts)
   try {
-    const events = await scrapeMarketWatch();
-    if (events.length > 0) {
-      console.log(`Scraped ${events.length} events from MarketWatch`);
-      return events;
+    const ffEvents = await scrapeFromForexFactory();
+    if (ffEvents.length > 0) {
+      console.log(`Scraped ${ffEvents.length} USD events from Forex Factory`);
+      allEvents.push(...ffEvents);
     }
   } catch (err) {
-    console.error("MarketWatch scrape failed:", err);
+    console.error("Forex Factory scrape failed:", err);
   }
 
-  return [];
+  // 2. Generate forward calendar for future weeks (known schedule)
+  try {
+    const forwardEvents = generateForwardCalendar(8);
+    console.log(
+      `Generated ${forwardEvents.length} forward calendar events (next 8 weeks)`
+    );
+    allEvents.push(...forwardEvents);
+  } catch (err) {
+    console.error("Forward calendar generation failed:", err);
+  }
+
+  return allEvents;
 }

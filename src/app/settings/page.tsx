@@ -4,17 +4,61 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FiStar, FiTrash2, FiMoon, FiSun, FiBell } from "react-icons/fi";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useNotifications } from "@/contexts/NotificationContext";
+import {
+  FiStar,
+  FiTrash2,
+  FiMoon,
+  FiSun,
+  FiBell,
+  FiGlobe,
+} from "react-icons/fi";
+import type { Language } from "@/lib/i18n";
+import type { TranslationKey } from "@/lib/i18n";
+
+const LANGUAGES: { code: Language; label: string; flag: string }[] = [
+  { code: "en", label: "English", flag: "🇺🇸" },
+  { code: "zh", label: "中文", flag: "🇨🇳" },
+];
+
+const NOTIF_TOGGLES: {
+  key: "countdown" | "surprise" | "outlook" | "watchlist";
+  labelKey: TranslationKey;
+  descKey: TranslationKey;
+}[] = [
+  {
+    key: "countdown",
+    labelKey: "notifications.countdown",
+    descKey: "notifications.countdownDesc",
+  },
+  {
+    key: "surprise",
+    labelKey: "notifications.surprise",
+    descKey: "notifications.surpriseDesc",
+  },
+  {
+    key: "outlook",
+    labelKey: "notifications.outlook",
+    descKey: "notifications.outlookDesc",
+  },
+  {
+    key: "watchlist",
+    labelKey: "notifications.watchlist",
+    descKey: "notifications.watchlistDesc",
+  },
+];
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
+  const { t, language, setLanguage } = useLanguage();
+  const { prefs, updatePref, permissionGranted, requestPermission } =
+    useNotifications();
   const [watchlist, setWatchlist] = useState<string[]>([]);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("watchlist");
     if (saved) setWatchlist(JSON.parse(saved));
-    setNotificationsEnabled(Notification.permission === "granted");
   }, []);
 
   function removeFromWatchlist(eventName: string) {
@@ -23,22 +67,55 @@ export default function SettingsPage() {
     localStorage.setItem("watchlist", JSON.stringify(updated));
   }
 
-  async function requestNotifications() {
-    if ("Notification" in window) {
-      const permission = await Notification.requestPermission();
-      setNotificationsEnabled(permission === "granted");
-    }
-  }
-
   return (
     <div className="min-h-screen">
-      <Header title="Settings" />
+      <Header titleKey="nav.settings" />
       <div className="px-4 md:px-6 py-6 max-w-2xl mx-auto space-y-6">
+        {/* Language */}
+        <Card>
+          <CardHeader>
+            <h2 className="font-serif text-lg font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+              {t("settings.language")}
+            </h2>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FiGlobe className="text-blue-500" size={20} />
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {t("settings.language")}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t("settings.languageDesc")}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-sm p-1">
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => setLanguage(lang.code)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                      language === lang.code
+                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                    }`}
+                  >
+                    <span>{lang.flag}</span>
+                    <span>{lang.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Appearance */}
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Appearance
+            <h2 className="font-serif text-lg font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+              {t("settings.appearance")}
             </h2>
           </CardHeader>
           <CardContent>
@@ -51,22 +128,24 @@ export default function SettingsPage() {
                 )}
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {theme === "dark" ? "Dark Mode" : "Light Mode"}
+                    {theme === "dark"
+                      ? t("settings.darkMode")
+                      : t("settings.lightMode")}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Toggle between light and dark themes
+                    {t("settings.themeDesc")}
                   </p>
                 </div>
               </div>
               <button
                 onClick={toggleTheme}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  theme === "dark" ? "bg-emerald-600" : "bg-gray-300"
+                className={`relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors ${
+                  theme === "dark" ? "bg-[#0F4C81]" : "bg-gray-300"
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    theme === "dark" ? "translate-x-6" : "translate-x-0.5"
+                  className={`inline-block w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                    theme === "dark" ? "translate-x-6" : "translate-x-1"
                   }`}
                 />
               </button>
@@ -77,40 +156,76 @@ export default function SettingsPage() {
         {/* Notifications */}
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Notifications
+            <h2 className="font-serif text-lg font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+              {t("settings.notifications")}
             </h2>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
+            {/* Browser permission */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E0D8] dark:border-[#2D2D2D]">
               <div className="flex items-center gap-3">
                 <FiBell
                   className={
-                    notificationsEnabled ? "text-emerald-500" : "text-gray-400"
+                    permissionGranted
+                      ? "text-[#0F4C81] dark:text-[#5BA3D9]"
+                      : "text-gray-400"
                   }
                   size={20}
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    Browser Notifications
+                    {t("settings.browserNotifications")}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Get alerts for high-impact events and surprise data
+                    {t("settings.notifDesc")}
                   </p>
                 </div>
               </div>
-              {notificationsEnabled ? (
-                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  Enabled
+              {permissionGranted ? (
+                <span className="text-xs font-medium text-[#0F4C81] dark:text-[#5BA3D9]">
+                  {t("settings.enabled")}
                 </span>
               ) : (
                 <button
-                  onClick={requestNotifications}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors"
+                  onClick={requestPermission}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-[#0F4C81] rounded-sm hover:bg-[#0F4C81]/90 transition-colors"
                 >
-                  Enable
+                  {t("settings.enable")}
                 </button>
               )}
+            </div>
+
+            {/* Individual toggles */}
+            <div className="space-y-3 pt-3">
+              {NOTIF_TOGGLES.map((toggle) => (
+                <div
+                  key={toggle.key}
+                  className="flex items-center justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {t(toggle.labelKey)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t(toggle.descKey)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => updatePref(toggle.key, !prefs[toggle.key])}
+                    className={`relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors ${
+                      prefs[toggle.key]
+                        ? "bg-[#0F4C81]"
+                        : "bg-gray-300 dark:bg-gray-600"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                        prefs[toggle.key] ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -119,18 +234,18 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Watchlist
+              <h2 className="font-serif text-lg font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+                {t("settings.watchlist")}
               </h2>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {watchlist.length} items
+                {watchlist.length} {t("settings.items")}
               </span>
             </div>
           </CardHeader>
           <CardContent>
             {watchlist.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-500 text-center py-4">
-                No events in your watchlist. Click the star icon on events to add them.
+                {t("settings.noWatchlist")}
               </p>
             ) : (
               <ul className="space-y-2">
@@ -165,17 +280,16 @@ export default function SettingsPage() {
         {/* About */}
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              About
+            <h2 className="font-serif text-lg font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
+              {t("settings.about")}
             </h2>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Trading News Dashboard provides AI-powered analysis of economic calendar events.
-              Data is sourced from MarketWatch and analyzed using Google Gemini AI.
+              {t("settings.aboutDesc")}
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-600 mt-3">
-              This tool is for informational purposes only. Not financial advice.
+              {t("settings.disclaimer")}
             </p>
           </CardContent>
         </Card>

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { ChatPanel } from "@/components/chat/ChatPanel";
@@ -13,6 +15,12 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const dmSerifDisplay = DM_Serif_Display({
+  variable: "--font-serif",
+  weight: "400",
   subsets: ["latin"],
 });
 
@@ -36,15 +44,19 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${dmSerifDisplay.variable} font-sans antialiased`}
       >
         <ThemeProvider>
-          <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
-            <Sidebar />
-            <main className="flex-1 min-w-0 pb-16 md:pb-0">{children}</main>
-          </div>
-          <MobileNav />
-          <ChatPanel />
+          <LanguageProvider>
+            <NotificationProvider>
+              <div className="flex min-h-screen bg-[#FAF7F2] dark:bg-[#111111]">
+                <Sidebar />
+                <main className="flex-1 min-w-0 pb-16 md:pb-0">{children}</main>
+              </div>
+              <MobileNav />
+              <ChatPanel />
+            </NotificationProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

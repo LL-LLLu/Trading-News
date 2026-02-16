@@ -6,6 +6,7 @@ import { EventList } from "@/components/dashboard/EventList";
 import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { FiSearch, FiFilter } from "react-icons/fi";
 import { HistoricalChart } from "@/components/analysis/HistoricalChart";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type EventData = {
   id: string;
@@ -38,6 +39,7 @@ const categories = [
 ];
 
 export default function HistoryPage() {
+  const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [events, setEvents] = useState<EventData[]>([]);
@@ -76,7 +78,7 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="History" />
+      <Header titleKey="nav.history" />
       <div className="px-4 md:px-6 py-6 space-y-6">
         {/* Search and filters */}
         <div className="flex flex-col sm:flex-row gap-3">
@@ -87,10 +89,10 @@ export default function HistoryPage() {
             />
             <input
               type="text"
-              placeholder="Search events..."
+              placeholder={t("history.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#1A1A1A] border border-[#E5E0D8] dark:border-[#2D2D2D] rounded-sm text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
             />
           </div>
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -99,9 +101,9 @@ export default function HistoryPage() {
               <button
                 key={cat}
                 onClick={() => setCategory(cat === "ALL" ? null : cat)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm whitespace-nowrap transition-colors ${
                   (cat === "ALL" && !category) || category === cat
-                    ? "bg-emerald-600 text-white"
+                    ? "bg-[#0F4C81] text-white"
                     : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`}
               >
@@ -113,16 +115,16 @@ export default function HistoryPage() {
 
         {/* Historical Comparison */}
         {eventNames.length > 0 && (
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-              Historical Comparison
+          <div className="bg-white dark:bg-[#1A1A1A] border border-[#E5E0D8] dark:border-[#2D2D2D] rounded-none p-5">
+            <h3 className="font-serif text-sm font-semibold text-[#1A1A1A] dark:text-[#F5F5F4] mb-3">
+              {t("history.historicalComparison")}
             </h3>
             <select
               value={selectedEvent || ""}
               onChange={(e) => setSelectedEvent(e.target.value || null)}
-              className="w-full sm:w-auto px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white mb-4"
+              className="w-full sm:w-auto px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm text-sm text-gray-900 dark:text-white mb-4"
             >
-              <option value="">Select an event to compare...</option>
+              <option value="">{t("history.selectEvent")}</option>
               {eventNames.map((name) => (
                 <option key={name} value={name}>
                   {name}
@@ -135,24 +137,24 @@ export default function HistoryPage() {
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-200 dark:border-gray-800">
+                      <tr className="border-b border-[#E5E0D8] dark:border-[#2D2D2D]">
                         <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Date
+                          {t("data.date")}
                         </th>
                         <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Period
+                          {t("data.period")}
                         </th>
                         <th className="text-right py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Actual
+                          {t("data.actual")}
                         </th>
                         <th className="text-right py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Forecast
+                          {t("data.forecast")}
                         </th>
                         <th className="text-right py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Previous
+                          {t("data.previous")}
                         </th>
                         <th className="text-right py-2 px-3 text-gray-500 dark:text-gray-500 font-medium">
-                          Surprise
+                          {t("data.surprise")}
                         </th>
                       </tr>
                     </thead>
@@ -192,7 +194,7 @@ export default function HistoryPage() {
                               className={`py-2 px-3 text-right font-medium ${
                                 surprise
                                   ? parseFloat(surprise) > 0
-                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    ? "text-green-600 dark:text-green-400"
                                     : parseFloat(surprise) < 0
                                       ? "text-red-600 dark:text-red-400"
                                       : "text-gray-500"

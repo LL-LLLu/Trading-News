@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { EventAnalysisResult, WeeklyOutlookResult } from "@/types/events";
 import {
   buildEventAnalysisPrompt,
+  buildWeeklyResearchPrompt,
   buildWeeklyOutlookPrompt,
   buildChatPrompt,
 } from "./prompts";
@@ -123,6 +124,42 @@ const WEEKLY_OUTLOOK_SCHEMA = {
   ],
 };
 
+const ANALYSIS_MODELS = ["gemini-3-pro-preview", "gemini-2.5-pro"] as const;
+
+async function generateWithFallback(config: {
+  contents: string;
+  schema: typeof EVENT_ANALYSIS_SCHEMA | typeof WEEKLY_OUTLOOK_SCHEMA;
+  temperature: number;
+}): Promise<string> {
+  let lastError: unknown;
+  for (const model of ANALYSIS_MODELS) {
+    try {
+      const response = await genAI.models.generateContent({
+        model,
+        contents: config.contents,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: config.schema,
+          temperature: config.temperature,
+        },
+      });
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini");
+      console.log(`[Gemini] Success with model: ${model}`);
+      return text;
+    } catch (err) {
+      const errStr = String(err);
+      if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED")) {
+        console.warn(`[Gemini] ${model} quota exhausted, trying fallback...`);
+        lastError = err;
+        continue;
+      }
+      throw err; // Non-quota errors are thrown immediately
+    }
+  }
+  throw lastError;
+}
+
 export async function analyzeEvent(event: {
   eventName: string;
   dateTime: Date;
@@ -134,18 +171,11 @@ export async function analyzeEvent(event: {
 }): Promise<EventAnalysisResult> {
   const prompt = buildEventAnalysisPrompt(event);
 
-  const response = await genAI.models.generateContent({
-    model: "gemini-2.5-flash",
+  const text = await generateWithFallback({
     contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: EVENT_ANALYSIS_SCHEMA,
-      temperature: 0.3,
-    },
+    schema: EVENT_ANALYSIS_SCHEMA,
+    temperature: 0.3,
   });
-
-  const text = response.text;
-  if (!text) throw new Error("Empty response from Gemini");
 
   return JSON.parse(text) as EventAnalysisResult;
 }
@@ -164,22 +194,144 @@ export async function generateWeeklyOutlook(events: {
     summary: string;
   } | null;
 }[]): Promise<WeeklyOutlookResult> {
-  const prompt = buildWeeklyOutlookPrompt(events);
+  // Step 1: Web research with Google Search grounding
+  console.log("[Outlook] Step 1: Gathering web research with Google Search...");
+  const researchPrompt = buildWeeklyResearchPrompt(events);
 
-  const response = await genAI.models.generateContent({
-    model: "gemini-2.5-pro",
-    contents: prompt,
+  const researchResponse = await genAI.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: researchPrompt,
     config: {
-      responseMimeType: "application/json",
-      responseSchema: WEEKLY_OUTLOOK_SCHEMA,
-      temperature: 0.4,
+      tools: [{ googleSearch: {} }],
+      temperature: 0.3,
     },
   });
 
-  const text = response.text;
-  if (!text) throw new Error("Empty response from Gemini");
+  const webResearch = researchResponse.text || "";
+  console.log(
+    `[Outlook] Research gathered: ${webResearch.length} chars from web`
+  );
+
+  // Step 2: Generate structured outlook using research as context
+  console.log("[Outlook] Step 2: Generating structured outlook...");
+  const outlookPrompt = buildWeeklyOutlookPrompt(events, webResearch);
+
+  const text = await generateWithFallback({
+    contents: outlookPrompt,
+    schema: WEEKLY_OUTLOOK_SCHEMA,
+    temperature: 0.4,
+  });
 
   return JSON.parse(text) as WeeklyOutlookResult;
+}
+
+export interface WebForecastResult {
+  forecast: string;
+  sources: Array<{ title: string; url?: string }>;
+}
+
+export async function generateWebForecast(event: {
+  eventName: string;
+  dateTime: Date;
+  period?: string | null;
+  actual?: string | null;
+  forecast?: string | null;
+  previous?: string | null;
+  category: string;
+  importance: string;
+}): Promise<WebForecastResult> {
+  const now = new Date();
+  const isReleased = event.actual != null && event.actual !== "";
+  const mode = isReleased ? "review" : "forecast";
+
+  const prompt = isReleased
+    ? `The ${event.eventName} for ${event.period || "the latest period"} was just released with an actual value of ${event.actual} (forecast was ${event.forecast || "N/A"}, previous was ${event.previous || "N/A"}).
+
+Search for the latest news and market reactions from at least 5 different sources (major financial news outlets, investment banks, government agencies, economic research firms). Write a comprehensive market review with the following sections:
+
+## Market Reaction
+How stocks (S&P 500, Dow, Nasdaq), bonds (Treasury yields), and currencies (USD) reacted immediately after the release. Include specific numbers and moves.
+
+## Wall Street Analysis
+What 2-3 named analysts or firms (e.g., Goldman Sachs, JP Morgan, Morgan Stanley) are saying about this data. Include their specific commentary and outlook.
+
+## Fed Policy Implications
+What this data means for the Federal Reserve's interest rate path. Reference any recent Fed speeches or dot plot expectations.
+
+## Historical Context
+How this reading compares to the historical trend. Is it unusually high/low? How did markets react in similar past scenarios? Reference specific past episodes.
+
+## Counter Argument
+Present the bear case or contrarian view — why this data might be misleading or why markets could be over/under-reacting. What risks are being overlooked?
+
+Be specific with data points, analyst names/firms, and market moves. Each section should be 2-3 sentences minimum.`
+    : `The ${event.eventName} for ${event.period || "the upcoming period"} is scheduled to be released on ${event.dateTime.toLocaleDateString()}. The previous reading was ${event.previous || "N/A"} and the consensus forecast is ${event.forecast || "not yet available"}.
+
+Search for the latest news, analyst forecasts, and market expectations from at least 5 different sources (major financial news outlets, investment banks, government agencies, economic research firms). Write a comprehensive pre-release forecast with the following sections:
+
+## Consensus Forecast
+What the consensus expects and why. Include specific forecasts from 2-3 named banks or economists (e.g., Goldman Sachs expects X, Morgan Stanley sees Y).
+
+## Key Drivers
+What economic factors and leading indicators suggest about this release. What recent data points (e.g., regional surveys, related indicators) give us clues?
+
+## Upside/Downside Scenarios
+Specific factors that could drive a positive surprise vs a negative surprise. What would a beat or miss look like in numbers?
+
+## Historical Context
+How has this indicator trended over the past several months? What's the typical revision pattern? How have markets historically reacted to surprises in this data?
+
+## Counter Argument
+Present the contrarian view — why the consensus might be wrong. What risks or factors are most analysts underweighting? What could blindside the market?
+
+Be specific with analyst names/firms, forecast ranges, and relevant economic context. Each section should be 2-3 sentences minimum.`;
+
+  let response;
+  let lastError: unknown;
+  for (const model of ANALYSIS_MODELS) {
+    try {
+      response = await genAI.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.4,
+        },
+      });
+      console.log(`[WebForecast] Success with model: ${model}`);
+      break;
+    } catch (err) {
+      const errStr = String(err);
+      if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED")) {
+        console.warn(`[WebForecast] ${model} quota exhausted, trying fallback...`);
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (!response) throw lastError;
+
+  const text = response.text || "";
+
+  // Extract grounding sources from metadata
+  const metadata = response.candidates?.[0]?.groundingMetadata;
+  const sources: Array<{ title: string; url?: string }> = [];
+  if (metadata?.groundingChunks) {
+    for (const chunk of metadata.groundingChunks) {
+      if (chunk.web) {
+        sources.push({
+          title: chunk.web.title || "Source",
+          url: chunk.web.uri,
+        });
+      }
+    }
+  }
+
+  return {
+    forecast: `[${mode === "review" ? "POST-RELEASE REVIEW" : "PRE-RELEASE FORECAST"}]\n\n${text}`,
+    sources,
+  };
 }
 
 export async function* streamChat(

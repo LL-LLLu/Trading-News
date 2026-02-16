@@ -27,9 +27,9 @@ export function SectorsClient({ sectors }: { sectors: SectorData[] }) {
   function getHeatColor(score: number, direction: string): string {
     if (score === 0) return "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700";
     if (direction === "BULLISH") {
-      if (score >= 7) return "bg-emerald-200 dark:bg-emerald-900/60 border-emerald-400 dark:border-emerald-700";
-      if (score >= 4) return "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-800";
-      return "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50";
+      if (score >= 7) return "bg-green-200 dark:bg-green-900/60 border-green-400 dark:border-green-700";
+      if (score >= 4) return "bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-800";
+      return "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/50";
     }
     if (direction === "BEARISH") {
       if (score >= 7) return "bg-red-200 dark:bg-red-900/60 border-red-400 dark:border-red-700";
@@ -53,12 +53,12 @@ export function SectorsClient({ sectors }: { sectors: SectorData[] }) {
                   selectedSector === sector.sector ? null : sector.sector
                 )
               }
-              className={`border rounded-xl p-4 text-left transition-all hover:shadow-md ${getHeatColor(
+              className={`border rounded-none p-4 text-left transition-all hover:border-[#0F4C81]/30 ${getHeatColor(
                 sector.avgScore,
                 sector.netDirection
               )} ${
                 selectedSector === sector.sector
-                  ? "ring-2 ring-emerald-500"
+                  ? "ring-2 ring-[#0F4C81]"
                   : ""
               }`}
             >
@@ -135,11 +135,11 @@ export function SectorsClient({ sectors }: { sectors: SectorData[] }) {
         <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span className="font-medium">Legend:</span>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded bg-emerald-200 dark:bg-emerald-900/60" />
+            <div className="w-3 h-3 rounded bg-green-200 dark:bg-green-900/60" />
             <span>Strong Bullish</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded bg-emerald-50 dark:bg-emerald-900/20" />
+            <div className="w-3 h-3 rounded bg-green-50 dark:bg-green-900/20" />
             <span>Mild Bullish</span>
           </div>
           <div className="flex items-center gap-1">

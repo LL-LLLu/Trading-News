@@ -7,6 +7,8 @@ import {
   FiClock,
 } from "react-icons/fi";
 import { formatDistanceToNow } from "date-fns";
+import { zhCN } from "date-fns/locale";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface QuickStatsProps {
   totalEvents: number;
@@ -24,44 +26,48 @@ export function QuickStats({
   weekSentiment,
   nextEvent,
 }: QuickStatsProps) {
+  const { t, language } = useLanguage();
+
   const sentimentConfig = {
-    BULLISH: { color: "text-emerald-600 dark:text-emerald-400", label: "Bullish" },
-    BEARISH: { color: "text-red-600 dark:text-red-400", label: "Bearish" },
-    NEUTRAL: { color: "text-gray-600 dark:text-gray-400", label: "Neutral" },
+    BULLISH: { color: "text-green-600 dark:text-green-400", labelKey: "stats.bullish" as const },
+    BEARISH: { color: "text-red-600 dark:text-red-400", labelKey: "stats.bearish" as const },
+    NEUTRAL: { color: "text-gray-600 dark:text-gray-400", labelKey: "stats.neutral" as const },
   };
 
   const sentiment = weekSentiment ? sentimentConfig[weekSentiment] : null;
+  const dateFnsLocale = language === "zh" ? { locale: zhCN } : undefined;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <StatCard
         icon={<FiCalendar size={18} />}
-        label="Total Events"
+        label={t("stats.totalEvents")}
         value={totalEvents.toString()}
-        iconColor="text-blue-500"
+        iconColor="text-[#0F4C81]"
       />
       <StatCard
         icon={<FiAlertTriangle size={18} />}
-        label="High Impact"
+        label={t("stats.highImpact")}
         value={highImpactCount.toString()}
         iconColor="text-red-500"
       />
       <StatCard
         icon={<FiTrendingUp size={18} />}
-        label="Week Sentiment"
-        value={sentiment?.label || "Pending"}
+        label={t("stats.weekSentiment")}
+        value={sentiment ? t(sentiment.labelKey) : t("stats.pending")}
         valueColor={sentiment?.color}
-        iconColor="text-emerald-500"
+        iconColor="text-green-600"
       />
       <StatCard
         icon={<FiClock size={18} />}
-        label="Next Event"
+        label={t("stats.nextEvent")}
         value={
           nextEvent
             ? formatDistanceToNow(new Date(nextEvent.dateTime), {
                 addSuffix: true,
+                ...dateFnsLocale,
               })
-            : "None"
+            : t("stats.none")
         }
         subtitle={nextEvent?.eventName}
         iconColor="text-amber-500"
@@ -86,22 +92,22 @@ function StatCard({
   iconColor?: string;
 }) {
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+    <div className="bg-white dark:bg-[#1A1A1A] border border-[#E5E0D8] dark:border-[#2D2D2D] rounded-none border-t-2 border-t-[#0F4C81] p-4">
       <div className="flex items-center gap-2 mb-2">
-        <span className={iconColor || "text-gray-500"}>{icon}</span>
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-500 uppercase tracking-wide">
+        <span className={iconColor || "text-[#6B7280]"}>{icon}</span>
+        <span className="text-xs font-medium text-[#6B7280] uppercase tracking-wide">
           {label}
         </span>
       </div>
       <p
-        className={`text-xl font-bold ${
-          valueColor || "text-gray-900 dark:text-white"
+        className={`font-serif text-xl font-bold ${
+          valueColor || "text-[#1A1A1A] dark:text-[#F5F5F4]"
         }`}
       >
         {value}
       </p>
       {subtitle && (
-        <p className="text-xs text-gray-500 dark:text-gray-500 truncate mt-0.5">
+        <p className="text-xs text-[#6B7280] truncate mt-0.5">
           {subtitle}
         </p>
       )}

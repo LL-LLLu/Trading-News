@@ -14,7 +14,7 @@ export function Card({
   return (
     <div
       onClick={onClick}
-      className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm ${onClick ? "cursor-pointer hover:border-gray-300 dark:hover:border-gray-700 transition-colors" : ""} ${className}`}
+      className={`bg-white dark:bg-[#1A1A1A] border border-[#E5E0D8] dark:border-[#2D2D2D] rounded-none ${onClick ? "cursor-pointer hover:border-[#0F4C81]/30 dark:hover:border-[#5BA3D9]/30 transition-colors" : ""} ${className}`}
     >
       {children}
     </div>
@@ -30,7 +30,7 @@ export function CardHeader({
 }) {
   return (
     <div
-      className={`px-5 py-4 border-b border-gray-100 dark:border-gray-800 ${className}`}
+      className={`px-5 py-4 border-b border-[#E5E0D8] dark:border-[#2D2D2D] ${className}`}
     >
       {children}
     </div>

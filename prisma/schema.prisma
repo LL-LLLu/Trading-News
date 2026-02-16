@@ -71,6 +71,8 @@ model EventAnalysis {
   historicalContext     String
   riskFactors          Json
   keyLevelsToWatch     String?
+  webForecast          String?
+  webSources           Json?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 }
@@ -99,4 +101,16 @@ model ChatMessage {
   createdAt DateTime @default(now())
 
   @@index([sessionId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // SURPRISE, OUTLOOK, EVENT_COUNTDOWN
+  title     String
+  body      String
+  eventId   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

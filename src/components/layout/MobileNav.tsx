@@ -9,20 +9,23 @@ import {
   FiClock,
   FiGrid,
 } from "react-icons/fi";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type { TranslationKey } from "@/lib/i18n";
 
-const navItems = [
-  { href: "/", label: "Home", icon: FiHome },
-  { href: "/calendar", label: "Calendar", icon: FiCalendar },
-  { href: "/outlook", label: "Outlook", icon: FiTrendingUp },
-  { href: "/history", label: "History", icon: FiClock },
-  { href: "/sectors", label: "Sectors", icon: FiGrid },
+const navItems: { href: string; labelKey: TranslationKey; icon: typeof FiHome }[] = [
+  { href: "/", labelKey: "nav.home", icon: FiHome },
+  { href: "/calendar", labelKey: "nav.calendar", icon: FiCalendar },
+  { href: "/outlook", labelKey: "nav.outlook", icon: FiTrendingUp },
+  { href: "/history", labelKey: "nav.history", icon: FiClock },
+  { href: "/sectors", labelKey: "nav.sectors", icon: FiGrid },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { t } = useLanguage();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 z-50">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1A1A1A] border-t border-[#E5E0D8] dark:border-[#2D2D2D] z-50">
       <div className="flex items-center justify-around py-2">
         {navItems.map((item) => {
           const isActive =
@@ -32,14 +35,14 @@ export function MobileNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${
+              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 text-[10px] font-medium transition-colors ${
                 isActive
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-gray-500 dark:text-gray-500"
+                  ? "text-[#0F4C81] dark:text-[#5BA3D9]"
+                  : "text-[#6B7280]"
               }`}
             >
               <item.icon size={20} />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}

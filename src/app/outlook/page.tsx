@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, format } from "date-fns";
+import { startOfWeek } from "date-fns";
 import { OutlookClient } from "./OutlookClient";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default async function OutlookPage() {
       }
     : null;
 
-  return <OutlookClient outlook={serialized} />;
+  return <OutlookClient initialOutlook={serialized} />;
 }
 
 export const metadata = {

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scrapeEconomicCalendar } from "@/lib/scraper";
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   // Verify cron secret in production
   const authHeader = request.headers.get("authorization");
@@ -23,8 +25,26 @@ export async function GET(request: NextRequest) {
     }
 
     let upsertedCount = 0;
+    let surpriseCount = 0;
     for (const event of events) {
       try {
+        // Check if this event previously had no actual data (for surprise detection)
+        const existing = await prisma.economicEvent.findUnique({
+          where: {
+            eventSlug_dateTime: {
+              eventSlug: event.eventSlug,
+              dateTime: event.dateTime,
+            },
+          },
+          select: { id: true, actual: true, forecast: true, importance: true },
+        });
+
+        const isNewRelease =
+          existing &&
+          !existing.actual &&
+          event.actual != null &&
+          event.actual !== "";
+
         await prisma.economicEvent.upsert({
           where: {
             eventSlug_dateTime: {
@@ -53,6 +73,37 @@ export async function GET(request: NextRequest) {
           },
         });
         upsertedCount++;
+
+        // Surprise detection: actual just populated and deviates from forecast
+        if (isNewRelease && existing.forecast) {
+          const actual = parseFloat(event.actual!.replace(/[%,K]/g, ""));
+          const forecast = parseFloat(existing.forecast.replace(/[%,K]/g, ""));
+          if (!isNaN(actual) && !isNaN(forecast) && forecast !== 0) {
+            const surprisePct = Math.abs(
+              ((actual - forecast) / Math.abs(forecast)) * 100,
+            );
+            // Threshold: >5% deviation for HIGH, >10% for others
+            const threshold = existing.importance === "HIGH" ? 5 : 10;
+            if (surprisePct >= threshold) {
+              const direction = actual > forecast ? "above" : "below";
+              await prisma.notification.create({
+                data: {
+                  type: "SURPRISE",
+                  title: `${event.eventName}: ${direction === "above" ? "Beat" : "Miss"}`,
+                  body: `Actual ${event.actual} vs Forecast ${existing.forecast} (${surprisePct.toFixed(1)}% ${direction})`,
+                  eventId: existing.id,
+                  metadata: {
+                    actual: event.actual,
+                    forecast: existing.forecast,
+                    surprisePct,
+                    direction,
+                  },
+                },
+              });
+              surpriseCount++;
+            }
+          }
+        }
       } catch (err) {
         console.error(`Failed to upsert event: ${event.eventName}`, err);
       }
@@ -62,12 +113,13 @@ export async function GET(request: NextRequest) {
       message: "Scrape completed",
       scraped: events.length,
       upserted: upsertedCount,
+      surprises: surpriseCount,
     });
   } catch (error) {
     console.error("Scrape cron failed:", error);
     return NextResponse.json(
       { error: "Scrape failed", details: String(error) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

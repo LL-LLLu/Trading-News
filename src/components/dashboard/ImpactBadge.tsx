@@ -13,8 +13,8 @@ export function ImpactBadge({
 }) {
   const directionConfig = {
     BULLISH: {
-      bg: "bg-emerald-100 dark:bg-emerald-900/30",
-      text: "text-emerald-700 dark:text-emerald-400",
+      bg: "bg-green-100 dark:bg-green-900/30",
+      text: "text-green-700 dark:text-green-400",
       icon: FiArrowUp,
     },
     BEARISH: {
@@ -39,7 +39,7 @@ export function ImpactBadge({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full font-semibold ${config.bg} ${config.text} ${sizeClasses}`}
+      className={`inline-flex items-center rounded-sm font-semibold ${config.bg} ${config.text} ${sizeClasses}`}
     >
       <Icon size={size === "sm" ? 12 : 14} />
       {score}/10
@@ -55,7 +55,7 @@ export function ImportanceDot({
   const colors = {
     HIGH: "bg-red-500",
     MEDIUM: "bg-amber-500",
-    LOW: "bg-emerald-500",
+    LOW: "bg-[#6B7280]",
   };
 
   return (

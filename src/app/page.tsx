@@ -7,6 +7,7 @@ import { CountdownTimer } from "@/components/dashboard/CountdownTimer";
 import { WeekNavigator } from "@/components/dashboard/WeekNavigator";
 import { EventList } from "@/components/dashboard/EventList";
 import { QuickStatsSkeleton, EventCardSkeleton } from "@/components/ui/Skeleton";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type EventData = {
   id: string;
@@ -26,6 +27,7 @@ type EventData = {
 };
 
 export default function DashboardPage() {
+  const { t } = useLanguage();
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,20 +64,23 @@ export default function DashboardPage() {
   const analyzedEvents = events.filter((e) => e.analysis);
   let weekSentiment: "BULLISH" | "BEARISH" | "NEUTRAL" | null = null;
   if (analyzedEvents.length > 0) {
-    const bullish = analyzedEvents.filter(
-      (e) => e.analysis?.impactDirection === "BULLISH"
-    ).length;
-    const bearish = analyzedEvents.filter(
-      (e) => e.analysis?.impactDirection === "BEARISH"
-    ).length;
-    if (bullish > bearish) weekSentiment = "BULLISH";
-    else if (bearish > bullish) weekSentiment = "BEARISH";
+    const importanceWeight = { HIGH: 3, MEDIUM: 2, LOW: 1 } as const;
+    let score = 0;
+    for (const e of analyzedEvents) {
+      if (!e.analysis) continue;
+      const weight =
+        importanceWeight[e.importance] * e.analysis.impactScore;
+      if (e.analysis.impactDirection === "BULLISH") score += weight;
+      else if (e.analysis.impactDirection === "BEARISH") score -= weight;
+    }
+    if (score > 0) weekSentiment = "BULLISH";
+    else if (score < 0) weekSentiment = "BEARISH";
     else weekSentiment = "NEUTRAL";
   }
 
   return (
     <div className="min-h-screen">
-      <Header title="Dashboard" />
+      <Header titleKey="nav.dashboard" />
       <div className="px-4 md:px-6 py-6 space-y-6">
         {/* Week Navigator */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -84,17 +89,17 @@ export default function DashboardPage() {
             onWeekChange={setCurrentWeek}
           />
           <div className="flex items-center gap-2">
-            {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => (
+            {(["ALL", "HIGH", "MEDIUM", "LOW"] as const).map((level) => (
               <button
                 key={level}
                 onClick={() => setFilter(level === "ALL" ? null : level)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
                   (level === "ALL" && !filter) || filter === level
-                    ? "bg-emerald-600 text-white"
-                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    ? "bg-[#0F4C81] text-white"
+                    : "bg-white dark:bg-[#1A1A1A] text-[#6B7280] border border-[#E5E0D8] dark:border-[#2D2D2D] hover:bg-gray-50 dark:hover:bg-white/5"
                 }`}
               >
-                {level}
+                {t(`filter.${level.toLowerCase()}` as "filter.all" | "filter.high" | "filter.medium" | "filter.low")}
               </button>
             ))}
           </div>
