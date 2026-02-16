@@ -8,7 +8,6 @@ import {
   FiTrendingUp,
   FiTrendingDown,
   FiActivity,
-  FiAlertTriangle,
   FiBarChart2,
   FiTarget,
   FiShield,
@@ -19,6 +18,7 @@ import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { ImpactBadge, ImportanceDot } from "@/components/dashboard/ImpactBadge";
+import { MarkdownRenderer } from "@/components/ui/MarkdownRenderer";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { ImpactDirection, Importance } from "@/generated/prisma";
 
@@ -90,7 +90,13 @@ export function EventDetailClient({ event }: EventDetailProps) {
                           : "neutral"
                     }
                   >
-                    {t(`importance.${event.importance}` as "importance.HIGH" | "importance.MEDIUM" | "importance.LOW")} {t("detail.impact")}
+                    {t(
+                      `importance.${event.importance}` as
+                        | "importance.HIGH"
+                        | "importance.MEDIUM"
+                        | "importance.LOW",
+                    )}{" "}
+                    {t("detail.impact")}
                   </Badge>
                   <Badge variant="default">
                     {event.category.replace(/_/g, " ")}
@@ -138,8 +144,16 @@ export function EventDetailClient({ event }: EventDetailProps) {
               highlight={!!event.actual}
               surprise={surprise}
             />
-            <DataCell label={t("data.forecast")} value={event.forecast} unit={event.unit} />
-            <DataCell label={t("data.previous")} value={event.previous} unit={event.unit} />
+            <DataCell
+              label={t("data.forecast")}
+              value={event.forecast}
+              unit={event.unit}
+            />
+            <DataCell
+              label={t("data.previous")}
+              value={event.previous}
+              unit={event.unit}
+            />
           </div>
 
           {/* ── Surprise Bar (if actual exists) ── */}
@@ -198,9 +212,15 @@ export function EventDetailClient({ event }: EventDetailProps) {
                     }`}
                   >
                     {analysis.impactDirection === "BULLISH" ? (
-                      <FiTrendingUp className="text-green-600 dark:text-green-400" size={20} />
+                      <FiTrendingUp
+                        className="text-green-600 dark:text-green-400"
+                        size={20}
+                      />
                     ) : analysis.impactDirection === "BEARISH" ? (
-                      <FiTrendingDown className="text-red-600 dark:text-red-400" size={20} />
+                      <FiTrendingDown
+                        className="text-red-600 dark:text-red-400"
+                        size={20}
+                      />
                     ) : (
                       <FiActivity className="text-gray-500" size={20} />
                     )}
@@ -241,19 +261,7 @@ export function EventDetailClient({ event }: EventDetailProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {analysis.detailedAnalysis
-                    .split("\n")
-                    .filter((p) => p.trim())
-                    .map((p, i) => (
-                      <p
-                        key={i}
-                        className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed"
-                      >
-                        {p}
-                      </p>
-                    ))}
-                </div>
+                <MarkdownRenderer content={analysis.detailedAnalysis} />
               </CardContent>
             </Card>
 
@@ -323,15 +331,19 @@ export function EventDetailClient({ event }: EventDetailProps) {
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-2">
-                    {(analysis.tradingImplications as string[]).map((impl, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400"
-                      >
-                        <span className="text-green-600 mt-0.5 flex-shrink-0">&#9656;</span>
-                        <span className="leading-relaxed">{impl}</span>
-                      </li>
-                    ))}
+                    {(analysis.tradingImplications as string[]).map(
+                      (impl, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400"
+                        >
+                          <span className="text-green-600 mt-0.5 flex-shrink-0">
+                            &#9656;
+                          </span>
+                          <span className="leading-relaxed">{impl}</span>
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </CardContent>
               </Card>
@@ -352,7 +364,9 @@ export function EventDetailClient({ event }: EventDetailProps) {
                         key={i}
                         className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400"
                       >
-                        <span className="text-red-400 mt-0.5 flex-shrink-0">&#9679;</span>
+                        <span className="text-red-400 mt-0.5 flex-shrink-0">
+                          &#9679;
+                        </span>
                         <span className="leading-relaxed">{risk}</span>
                       </li>
                     ))}
@@ -372,9 +386,7 @@ export function EventDetailClient({ event }: EventDetailProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                  {analysis.historicalContext}
-                </p>
+                <MarkdownRenderer content={analysis.historicalContext} />
               </CardContent>
             </Card>
 
@@ -427,7 +439,9 @@ function WebForecastCard({
           <div className="flex items-center gap-2">
             <FiGlobe className="text-blue-500" size={16} />
             <h3 className="font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
-              {isPostRelease ? t("detail.marketReview") : t("detail.preReleaseForecast")}
+              {isPostRelease
+                ? t("detail.marketReview")
+                : t("detail.preReleaseForecast")}
             </h3>
             <Badge variant={isPostRelease ? "info" : "warning"}>
               {isPostRelease ? t("detail.postRelease") : t("detail.preRelease")}
@@ -435,13 +449,19 @@ function WebForecastCard({
           </div>
           {sourceList.length > 0 && (
             <span className="text-xs text-gray-400 dark:text-gray-600">
-              {deduplicateSources(sourceList).length} {t("detail.sources").toLowerCase()}
+              {deduplicateSources(sourceList).length}{" "}
+              {t("detail.sources").toLowerCase()}
             </span>
           )}
         </div>
       </CardHeader>
       <CardContent>
-        <ForecastContent text={forecast} />
+        <MarkdownRenderer
+          content={forecast.replace(
+            /^\[(POST-RELEASE REVIEW|PRE-RELEASE FORECAST)\]\n\n/,
+            "",
+          )}
+        />
       </CardContent>
     </Card>
   );
@@ -536,7 +556,10 @@ function SourceItem({ source }: { source: { title: string; url?: string } }) {
  * URLs (vertexaisearch.cloud.google.com/...) but the title field contains
  * the actual source domain (e.g. "goldmansachs.com", "seekingalpha.com").
  */
-function getSourceDomain(source: { title: string; url?: string }): string | null {
+function getSourceDomain(source: {
+  title: string;
+  url?: string;
+}): string | null {
   // If the title looks like a domain name, use it directly
   if (source.title && /\.[a-z]{2,}$/i.test(source.title)) {
     return source.title.replace(/^www\./, "");
@@ -546,7 +569,10 @@ function getSourceDomain(source: { title: string; url?: string }): string | null
     try {
       const hostname = new URL(source.url).hostname.replace("www.", "");
       // Skip Google redirect domains
-      if (!hostname.includes("google.com") && !hostname.includes("googleapis.com")) {
+      if (
+        !hostname.includes("google.com") &&
+        !hostname.includes("googleapis.com")
+      ) {
         return hostname;
       }
     } catch {
@@ -557,7 +583,7 @@ function getSourceDomain(source: { title: string; url?: string }): string | null
 }
 
 function deduplicateSources(
-  sources: Array<{ title: string; url?: string }>
+  sources: Array<{ title: string; url?: string }>,
 ): Array<{ title: string; url?: string }> {
   const seen = new Set<string>();
   return sources.filter((s) => {
@@ -565,113 +591,6 @@ function deduplicateSources(
     if (!domain || seen.has(domain)) return false;
     seen.add(domain);
     return true;
-  });
-}
-
-// ── Forecast Content Renderer ──────────────────────────────────────
-
-function ForecastContent({ text }: { text: string }) {
-  const cleaned = text.replace(
-    /^\[(POST-RELEASE REVIEW|PRE-RELEASE FORECAST)\]\n\n/,
-    ""
-  );
-
-  const sections: Array<{ heading?: string; body: string }> = [];
-  const parts = cleaned.split(/^## /m);
-
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-
-    const newlineIdx = trimmed.indexOf("\n");
-    if (newlineIdx === -1) {
-      sections.push({ body: trimmed });
-    } else if (sections.length === 0 && !cleaned.startsWith("## ")) {
-      sections.push({ body: trimmed });
-    } else {
-      sections.push({
-        heading: trimmed.slice(0, newlineIdx).trim(),
-        body: trimmed.slice(newlineIdx + 1).trim(),
-      });
-    }
-  }
-
-  if (sections.length <= 1) {
-    return (
-      <div className="space-y-3">
-        {cleaned
-          .split("\n")
-          .filter((p) => p.trim())
-          .map((p, i) => (
-            <p key={i} className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-              {p}
-            </p>
-          ))}
-      </div>
-    );
-  }
-
-  const sectionConfig: Record<string, { icon: typeof FiGlobe; color: string }> = {
-    "Market Reaction": { icon: FiBarChart2, color: "text-blue-500" },
-    "Wall Street Analysis": { icon: FiTarget, color: "text-indigo-500" },
-    "Fed Policy Implications": { icon: FiActivity, color: "text-purple-500" },
-    "Consensus Forecast": { icon: FiBarChart2, color: "text-blue-500" },
-    "Key Drivers": { icon: FiTrendingUp, color: "text-green-600" },
-    "Upside/Downside Scenarios": { icon: FiActivity, color: "text-amber-500" },
-    "Historical Context": { icon: FiClock, color: "text-indigo-500" },
-    "Counter Argument": { icon: FiAlertTriangle, color: "text-red-500" },
-  };
-
-  return (
-    <div className="space-y-5">
-      {sections.map((section, i) => {
-        const cfg = section.heading
-          ? sectionConfig[section.heading]
-          : undefined;
-        const Icon = cfg?.icon || FiGlobe;
-
-        return (
-          <div key={i}>
-            {section.heading && (
-              <div className="flex items-center gap-2 mb-2">
-                <Icon size={14} className={cfg?.color || "text-gray-400"} />
-                <h4 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F5F5F4]">
-                  {section.heading}
-                </h4>
-              </div>
-            )}
-            <div className="space-y-2 pl-6">
-              {section.body
-                .split("\n")
-                .filter((p) => p.trim())
-                .map((p, j) => (
-                  <p
-                    key={j}
-                    className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed"
-                  >
-                    {renderBold(p)}
-                  </p>
-                ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Render **bold** text as actual bold spans
-function renderBold(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <span key={i} className="font-semibold text-gray-800 dark:text-gray-200">
-          {part.slice(2, -2)}
-        </span>
-      );
-    }
-    return part;
   });
 }
 
@@ -723,7 +642,7 @@ function DataCell({
 
 function computeSurprise(
   actual: string | null,
-  forecast: string | null
+  forecast: string | null,
 ): number | null {
   if (!actual || !forecast) return null;
   const a = parseNumericValue(actual);
